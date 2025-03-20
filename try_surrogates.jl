@@ -4,6 +4,8 @@
 using Plots
 using Random
 using Surrogates
+using SurrogatesPolyChaos
+using Optim
 #https://modernjuliaworkflows.org/writing/#repl
 
 plotlyjs(size=(800, 600))
@@ -30,7 +32,7 @@ function main()
     ssq(p) = sum(resid(p).^2)
     
     # initial guess
-    guess = (5.0, 1/20.0)
+    guess = [2.0, 1/18.0]
     yg = e1.(t, guess...)    
     rg = resid(guess)
     @info "SSQ" ssq(guess)
@@ -39,18 +41,33 @@ function main()
     plot!(pf, t, y, label="true")
     plot!(pf, t, yg, label="guess")
     pr = scatter(t, rg)
-    plot(pf, pr, layout=l, label="r")
+    display(plot(pf, pr, layout=l, label="r"))
     
+    # optimize using Optimization.jl
+    res = optimize(ssq, guess; autodiff = :forward)
+    @info "Simplex loc value niter" Optim.minimizer(res) Optim.minimum(res) Optim.iterations(res)
+    #@infiltrate
+
     # now onto surrogates
     # bounds for parameters
     lb = [0.0, 1/100.0]
     ub = [10.0, 1/2.0]
-    nsamples = 15
-    xsamp = sample(nsamples, lb, ub, SobolSample())
+    nsamples = 25
+    sampling = HaltonSample()
+    xsamp = sample(nsamples, lb, ub,GridSample())
     ysamp = ssq.(xsamp)
-    @info "Initial sampling" xsamp ysamp
-
-    surrogate = Kriging(xsamp, ysamp, lb, ub)
+    #@info "Initial sampling" xsamp ysamp
+    # Radial (default): bad
+    # Kriging (default): smooth
+    # Lobachevsky : bad.
+    # SecondOrderPolynomialSurrogate : very smooth!
+    # Wendland Completely off.
+    # Lobachevsky with alpha=1.0, 10 seems to do it. That would be 1/scale, more or less.
+    #surrogate = Kriging(xsamp, ysamp, lb, ub, p=[1.5, 1.5], theta=[0.1, 1.0])#[1/(u-l) for (l, u) in zip(lb, ub)]) 
+    surrogate = Kriging(xsamp, ysamp, lb, ub, p=[2.0, 2.0], theta=[10.0/(u-l) for (l, u) in zip(lb, ub)]) 
+    # Lobachevsky seems to crash on a linear algebra problem (like adding the same point many times).
+    #surrogate = LobachevskySurrogate(xsamp, ysamp, lb, ub, alpha=[0.01, 0.01]) 
+    #surrogate = PolynomialChaosSurrogate(xsamp, ysamp, lb, ub)
     @info "Estimation, at guess" surrogate(guess) ssq(guess)
     # plot the surrogate
     x_smooth = range(lb[1], ub[1], 64)
@@ -59,7 +76,13 @@ function main()
     surface(x_smooth, y_smooth, (x, y)->surrogate([x y]))
     p1s = [xy[1] for xy in xsamp]
     p2s = [xy[2] for xy in xsamp]
-    scatter!(p1s, p2s, ysamp, marker_z = ysamp, markercolor=:black, cbar=false)
+    display(scatter!(p1s, p2s, ysamp, marker_z = ysamp, markercolor=:black, cbar=false))
  #   # optimizing
-   # surrogate_optimize!(ssq, SRBF(), lb, ub, surrogate, SobolSample())
+    sur_res = surrogate_optimize(ssq, EI(), lb, ub, surrogate, sampling)
+    @info "Surrogate optimize complete" sur_res[1] sur_res[2]
+    surface(x_smooth, y_smooth, (x, y)->surrogate([x y]))
+    p1s = [xy[1] for xy in xsamp]
+    p2s = [xy[2] for xy in xsamp]
+    display(scatter!(p1s, p2s, ysamp, marker_z = ysamp, markercolor=:black, cbar=false))
+    @info "Sample length from .. to " nsamples length(xsamp)
 end
