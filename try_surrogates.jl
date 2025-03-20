@@ -50,7 +50,7 @@ function main()
     ysamp = ssq.(xsamp)
     @info "Initial sampling" xsamp ysamp
 
-    surrogate = RadialBasis(xsamp, ysamp, lb, ub)
+    surrogate = Kriging(xsamp, ysamp, lb, ub)
     @info "Estimation, at guess" surrogate(guess) ssq(guess)
     # plot the surrogate
     x_smooth = range(lb[1], ub[1], 64)
@@ -59,7 +59,7 @@ function main()
     surface(x_smooth, y_smooth, (x, y)->surrogate([x y]))
     p1s = [xy[1] for xy in xsamp]
     p2s = [xy[2] for xy in xsamp]
-    scatter!(p1s, p2s, ysamp, marker_z = ysamp, markercolor=:black)
+    scatter!(p1s, p2s, ysamp, marker_z = ysamp, markercolor=:black, cbar=false)
  #   # optimizing
    # surrogate_optimize!(ssq, SRBF(), lb, ub, surrogate, SobolSample())
 end
