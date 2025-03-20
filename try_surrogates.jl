@@ -29,16 +29,16 @@ function main()
     # sum of squares
     ssq(p) = sum(resid(p).^2)
     
-    guess = (3.0, 1/18.0)
-    yg = e1.(t, guess...)
-    
-    r0 = resid(guess)
-    pr = scatter(t, r0)
-    
+    # initial guess
+    guess = (5.0, 1/20.0)
+    yg = e1.(t, guess...)    
+    rg = resid(guess)
+    @info "SSQ" ssq(guess)
     l = @layout [a{0.8h};b]
     pf = scatter(t, yexp, label="yexp")
     plot!(pf, t, y, label="true")
     plot!(pf, t, yg, label="guess")
+    pr = scatter(t, rg)
     plot(pf, pr, layout=l, label="r")
     
 end
