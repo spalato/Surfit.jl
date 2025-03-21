@@ -50,11 +50,11 @@ function main()
 
     # now onto surrogates
     # bounds for parameters
-    lb = [0.0, 1/100.0]
-    ub = [10.0, 1/2.0]
+    lb = [0.0, 0.01]
+    ub = [10.0, 0.1]
     nsamples = 25
-    sampling = HaltonSample()
-    xsamp = sample(nsamples, lb, ub,GridSample())
+    sampling = SobolSample()
+    xsamp = sample(nsamples, lb, ub,SobolSample())
     ysamp = ssq.(xsamp)
     #@info "Initial sampling" xsamp ysamp
     # Radial (default): bad
@@ -64,25 +64,37 @@ function main()
     # Wendland Completely off.
     # Lobachevsky with alpha=1.0, 10 seems to do it. That would be 1/scale, more or less.
     #surrogate = Kriging(xsamp, ysamp, lb, ub, p=[1.5, 1.5], theta=[0.1, 1.0])#[1/(u-l) for (l, u) in zip(lb, ub)]) 
-    surrogate = Kriging(xsamp, ysamp, lb, ub, p=[2.0, 2.0], theta=[10.0/(u-l) for (l, u) in zip(lb, ub)]) 
+    surrogate = Kriging(xsamp, ysamp, lb, ub, p=[1.5, 1.5], theta=[0.01, 1.0])
     # Lobachevsky seems to crash on a linear algebra problem (like adding the same point many times).
     #surrogate = LobachevskySurrogate(xsamp, ysamp, lb, ub, alpha=[0.01, 0.01]) 
     #surrogate = PolynomialChaosSurrogate(xsamp, ysamp, lb, ub)
     @info "Estimation, at guess" surrogate(guess) ssq(guess)
-    # plot the surrogate
+    
+    # compute the rms distance between the true result and the surrogate over initial samples
+    @info "Initial RMS error" sum(@. (surrogate(xsamp) - ysamp)^2)
+    # plot the true surface, the initial surrogate and the final surrogate.
     x_smooth = range(lb[1], ub[1], 64)
     y_smooth = range(lb[2], ub[2], 64)
+    levels = 0:5:50
+    surf_true = contourf(x_smooth, y_smooth, (x, y)->ssq([x y]), levels=levels)
 
-    surface(x_smooth, y_smooth, (x, y)->surrogate([x y]))
+    surf_init = contourf(x_smooth, y_smooth, (x, y)->surrogate([x y]), levels=levels)
     p1s = [xy[1] for xy in xsamp]
     p2s = [xy[2] for xy in xsamp]
-    display(scatter!(p1s, p2s, ysamp, marker_z = ysamp, markercolor=:black, cbar=false))
+    scatter!(surf_init, p1s, p2s,  markercolor=:white, cbar=false)
+    
  #   # optimizing
     sur_res = surrogate_optimize(ssq, EI(), lb, ub, surrogate, sampling)
     @info "Surrogate optimize complete" sur_res[1] sur_res[2]
-    surface(x_smooth, y_smooth, (x, y)->surrogate([x y]))
+    surf_end = contourf(x_smooth, y_smooth, (x, y)->surrogate([x y]), levels=levels)
     p1s = [xy[1] for xy in xsamp]
     p2s = [xy[2] for xy in xsamp]
-    display(scatter!(p1s, p2s, ysamp, marker_z = ysamp, markercolor=:black, cbar=false))
+    scatter!(surf_end, p1s, p2s, markercolor=:white, cbar=false)
+    surfs = [surf_true, surf_init, surf_end]
+    for s in surfs
+        scatter!(s, [guess[1]], [guess[2]], markercolor=:red)
+        scatter!(s, [5.0], [1/20.0], markercolor=:blue)
+    end
+    display(plot(surfs..., layout=(1,3), size=(1200, 300), legend=false))
     @info "Sample length from .. to " nsamples length(xsamp)
 end
