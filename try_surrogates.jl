@@ -53,10 +53,13 @@ function main()
     lb = [0.0, 0.01]
     ub = [10.0, 0.1]
     scales = ub .- lb
-    lbs = lb./scales
-    ubs = ub./scales
-    guess_s = guess ./ scales
-    scaled_ssq(p) = ssq(p.*scales)
+
+    unscale(p) = p.*scales
+    scale(x) = x./scales
+    lbs = scale(lb)
+    ubs = scale(ub)
+    guess_s = scale(guess)
+    scaled_ssq(p) = ssq(unscale(p))
     nsamples = 25
     sampling = SobolSample()
     xsamp = sample(nsamples, lbs, ubs, SobolSample())
@@ -92,7 +95,7 @@ function main()
     
  #   # optimizing
     sur_res = surrogate_optimize(scaled_ssq, EI(), lbs, ubs, surrogate, sampling)
-    @info "Surrogate optimize complete" sur_res[1] sur_res[2]
+    @info "Surrogate optimize complete" unscale(sur_res[1]) sur_res[2]
     surf_end = contourf(x_smooth/scales[1], y_smooth/scales[2], (x, y)->surrogate([x y]), levels=levels)
     p1s = [xy[1] for xy in xsamp]
     p2s = [xy[2] for xy in xsamp]
@@ -101,6 +104,7 @@ function main()
     for s in surfs
         scatter!(s, [guess_s[1]], [guess_s[2]], markercolor=:red)
         scatter!(s, [5.0/scales[1]], [1/20.0/scales[2]], markercolor=:blue)
+        scatter!(s, [sur_res[1][1]], [sur_res[1][2]], markercolor=:green)
     end
     display(plot(surfs..., layout=(1,length(surfs)), size=(1200, 300), legend=false))
     @info "Sample length from .. to " nsamples length(xsamp)
