@@ -94,7 +94,7 @@ function main()
     surrogate = Kriging(samp_e1, init_val, scale(lb), scale(ub))
     @assert isapprox(surrogate(scale(guess_e1)), ssq_e1(guess_e1))
 
-    sur_res_e1 = surrogate_optimize(min_target, EI(), scale(lb), scale(ub), surrogate, RandomSample(), num_new_samples=10, maxiters=500)
+    sur_res_e1 = surrogate_optimize(min_target, DYCORS(), scale(lb), scale(ub), surrogate, RandomSample(), num_new_samples=10, maxiters=500)
     push!(
         benchs,
         (
@@ -118,7 +118,7 @@ function main()
     surrogate_g1e1 = Kriging(samp_g1e1, init_val, scale(lb), scale(ub))
     @assert isapprox(surrogate_g1e1(scale(guess_g1e1)), ssq_g1e1(guess_g1e1))
 
-    sur_res_g1e1 = surrogate_optimize(min_target, EI(), scale(lb), scale(ub), surrogate_g1e1, RandomSample(), num_new_samples=10, maxiters=500)
+    sur_res_g1e1 = surrogate_optimize(min_target, DYCORS(), scale(lb), scale(ub), surrogate_g1e1, RandomSample(), num_new_samples=10, maxiters=500)
     push!(
         benchs,
         (
