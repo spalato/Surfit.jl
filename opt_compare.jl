@@ -91,14 +91,14 @@ function main()
     push!(samp_e1, tuple(scale(guess_e1)...))
     init_val = min_target.(samp_e1)
 
-    surrogate = RadialBasis(samp_e1, init_val, scale(lb), scale(ub))
+    surrogate = Kriging(samp_e1, init_val, scale(lb), scale(ub))
     @assert isapprox(surrogate(scale(guess_e1)), ssq_e1(guess_e1))
 
-    sur_res_e1 = surrogate_optimize(min_target, DYCORS(), scale(lb), scale(ub), surrogate, RandomSample(), maxiters=500)
+    sur_res_e1 = surrogate_optimize(min_target, EI(), scale(lb), scale(ub), surrogate, RandomSample(), num_new_samples=10, maxiters=500)
     push!(
         benchs,
         (
-            method="Radial DYCORS", model="e1", popt=unscale(collect(sur_res_e1[1])),
+            method="Kriging EI", model="e1", popt=unscale(collect(sur_res_e1[1])),
             vmin=sur_res_e1[2], fcalls=length(samp_e1)
         )
     )
@@ -115,14 +115,14 @@ function main()
     push!(samp_g1e1, tuple(scale(guess_g1e1)...))
     init_val = min_target.(samp_g1e1)
 
-    surrogate_g1e1 = RadialBasis(samp_g1e1, init_val, scale(lb), scale(ub), rad=thinplateRadial())
+    surrogate_g1e1 = Kriging(samp_g1e1, init_val, scale(lb), scale(ub))
     @assert isapprox(surrogate_g1e1(scale(guess_g1e1)), ssq_g1e1(guess_g1e1))
 
-    sur_res_g1e1 = surrogate_optimize(min_target, DYCORS(), scale(lb), scale(ub), surrogate_g1e1, RandomSample(), num_new_samples=100, maxiters=1000)
+    sur_res_g1e1 = surrogate_optimize(min_target, EI(), scale(lb), scale(ub), surrogate_g1e1, RandomSample(), num_new_samples=10, maxiters=1000)
     push!(
         benchs,
         (
-            method="Radial DYCORS", model="g1e1", popt=unscale(collect(sur_res_g1e1[1])),
+            method="Kriging EI", model="g1e1", popt=unscale(collect(sur_res_g1e1[1])),
             vmin=sur_res_g1e1[2], fcalls=length(samp_g1e1)
         )
     )
