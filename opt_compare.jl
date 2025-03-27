@@ -20,6 +20,7 @@ scaled(f, scales) = p -> f(p./scales)
 unscaled(f, scales) = p -> f(p.*scales)
 
 Base.zero(v::Tuple{Float64, Float64}) = (Base.zero(Float64), Base.zero(Float64))
+Base.zero(::NTuple{N, T}) where {N, T} = ntuple(_ -> zero(T), N)
 
 function main()
     # load data
@@ -93,7 +94,7 @@ function main()
     surrogate = RadialBasis(samp_e1, init_val, scale(lb), scale(ub))
     @assert isapprox(surrogate(scale(guess_e1)), ssq_e1(guess_e1))
 
-    sur_res_e1 = surrogate_optimize(min_target, DYCORS(), scale(lb), scale(ub), surrogate, SobolSample(), maxiters=500)
+    sur_res_e1 = surrogate_optimize(min_target, DYCORS(), scale(lb), scale(ub), surrogate, RandomSample(), maxiters=500)
     push!(
         benchs,
         (
@@ -114,10 +115,10 @@ function main()
     push!(samp_g1e1, tuple(scale(guess_g1e1)...))
     init_val = min_target.(samp_g1e1)
 
-    surrogate_g1e1 = RadialBasis(samp_g1e1, init_val, scale(lb), scale(ub))
+    surrogate_g1e1 = RadialBasis(samp_g1e1, init_val, scale(lb), scale(ub), rad=thinplateRadial())
     @assert isapprox(surrogate_g1e1(scale(guess_g1e1)), ssq_g1e1(guess_g1e1))
 
-    sur_res_g1e1 = surrogate_optimize(min_target, DYCORS(), scale(lb), scale(ub), surrogate_g1e1, SobolSample(), num_new_samples=100, maxiters=500)
+    sur_res_g1e1 = surrogate_optimize(min_target, DYCORS(), scale(lb), scale(ub), surrogate_g1e1, RandomSample(), num_new_samples=100, maxiters=1000)
     push!(
         benchs,
         (
