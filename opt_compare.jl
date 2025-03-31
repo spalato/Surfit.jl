@@ -22,6 +22,44 @@ unscaled(f, scales) = p -> f(p.*scales)
 Base.zero(v::Tuple{Float64, Float64}) = (Base.zero(Float64), Base.zero(Float64))
 Base.zero(::NTuple{N, T}) where {N, T} = ntuple(_ -> zero(T), N)
 
+function optimize_model(model, t, y_exp, guess, method_name, lb, ub, surrogate_method=false)
+    resid = resid_vs(t, y_exp, model)
+    ssq = ssq_of(resid)
+
+    if !surrogate_method
+        # Nelder-Mead optimization
+        res = optimize(
+            ssq, guess,
+            Optim.Options(store_trace=true, trace_simplex=true);
+            autodiff = :forward
+        )
+        return (
+            method=method_name, model=string(model), popt=Optim.minimizer(res),
+            vmin=Optim.minimum(res), fcalls=Optim.f_calls(res)
+        )
+    else
+        # Surrogate optimization
+        spans = ub .- lb
+        scale = scaled(identity, spans)
+        unscale = unscaled(identity, spans)
+        min_target = unscaled(ssq, spans)
+
+        @assert unscale(scale(guess)) == guess
+        samp = sample(11, scale(lb), scale(ub), SobolSample())
+        push!(samp, tuple(scale(guess)...))
+        init_val = min_target.(samp)
+
+        surrogate = Kriging(samp, init_val, scale(lb), scale(ub))
+        @assert isapprox(surrogate(scale(guess)), ssq(guess))
+
+        sur_res = surrogate_optimize(min_target, EI(), scale(lb), scale(ub), surrogate, RandomSample(), num_new_samples=10, maxiters=500)
+        return (
+            method=method_name, model=string(model), popt=unscale(collect(sur_res[1])),
+            vmin=sur_res[2], fcalls=length(samp)
+        )
+    end
+end
+
 function main()
     # load data
     @info "Loading data"
@@ -36,99 +74,27 @@ function main()
     # plot data
     pdata = scatter(t, y_exp)
 
-    # Define NM targets
-    resid_e1 = resid_vs(t, y_exp, e1)
-    ssq_e1 = ssq_of(resid_e1)
-
-    resid_g1e1 = resid_vs(t, y_exp, g1e1)
-    ssq_g1e1 = ssq_of(resid_g1e1)
-
-    # inital guesses
+    # Initial guesses and bounds
     guess_e1 = [0.5, 1/0.6, 2.5]
+    lb_e1 = [0.4, 1/0.7, 2.45]
+    ub_e1 = [0.6, 1/0.1, 2.58]
+
     guess_g1e1 = [0.25, 1/0.4, 0.25, 1/0.6, 2.5]
-    # plot!(pdata, t, e1.(t, guess_e1...))
-    # plot!(pdata, t, g1e1.(t, guess_g1e1...))
-    # # Perform NM optimization
-    # display(pdata)
+    lb_g1e1 = [0.1, 1/0.7, 0.1, 1/0.7, 2.5]
+    ub_g1e1 = [0.6, 1/0.1, 0.6, 1/0.1, 2.58]
 
-    res_e1 = optimize(
-        ssq_e1, guess_e1, 
-        Optim.Options(store_trace=true, trace_simplex=true);
-        autodiff = :forward
-    )
+    # Benchmarks
     benchs = []
-    push!(
-        benchs,
-        (
-            method="NM", model="e1", popt=Optim.minimizer(res_e1),
-            vmin=Optim.minimum(res_e1), fcalls=Optim.f_calls(res_e1)
-        )
-    )
-    @info "NM e1" Optim.minimum(res_e1) Optim.f_calls(res_e1)
-    res_g1e1 = optimize(
-        ssq_g1e1, guess_g1e1, 
-        Optim.Options(store_trace=true, trace_simplex=true);
-        autodiff = :forward
-    )
-    push!(benchs,
-    (method="NM", model="g1e1",
-    popt=Optim.minimizer(res_g1e1), vmin=Optim.minimum(res_g1e1),
-    fcalls=Optim.f_calls(res_g1e1))
-)
-    @info "NM g1e1" Optim.minimum(res_g1e1) Optim.f_calls(res_g1e1)
 
+    # Nelder-Mead optimization
+    push!(benchs, optimize_model(e1, t, y_exp, guess_e1, "NM", lb_e1, ub_e1))
+    push!(benchs, optimize_model(g1e1, t, y_exp, guess_g1e1, "NM", lb_g1e1, ub_g1e1))
 
-    # surrogate fitting, e1
-    lb = [0.4, 1/0.7, 2.45]
-    ub = [0.6, 1/0.1, 2.58]
-    spans = ub .- lb
-    scale = scaled(identity, spans)
-    unscale = unscaled(identity, spans)
-    min_target = unscaled(ssq_e1, spans)
+    # Surrogate optimization
+    push!(benchs, optimize_model(e1, t, y_exp, guess_e1, "Kriging EI", lb_e1, ub_e1, true))
+    push!(benchs, optimize_model(g1e1, t, y_exp, guess_g1e1, "Kriging EI", lb_g1e1, ub_g1e1, true))
 
-    @assert unscale(scale(guess_e1)) == guess_e1
-    samp_e1 = sample(11, scale(lb), scale(ub), SobolSample())
-    push!(samp_e1, tuple(scale(guess_e1)...))
-    init_val = min_target.(samp_e1)
-
-    surrogate = Kriging(samp_e1, init_val, scale(lb), scale(ub))
-    @assert isapprox(surrogate(scale(guess_e1)), ssq_e1(guess_e1))
-
-    sur_res_e1 = surrogate_optimize(min_target, EI(), scale(lb), scale(ub), surrogate, RandomSample(), num_new_samples=10, maxiters=500)
-    push!(
-        benchs,
-        (
-            method="Kriging EI", model="e1", popt=unscale(collect(sur_res_e1[1])),
-            vmin=sur_res_e1[2], fcalls=length(samp_e1)
-        )
-    )
-    # surrogate fitting, g1e1
-    lb = [0.1, 1/0.7, 0.1, 1/0.7, 2.5]
-    ub = [0.6, 1/0.1, 0.6, 1/0.1, 2.58]
-    spans = ub .- lb
-    scale = scaled(identity, spans)
-    unscale = unscaled(identity, spans)
-    min_target = unscaled(ssq_g1e1, spans)
-
-    @assert unscale(scale(guess_g1e1)) == guess_g1e1
-    samp_g1e1 = sample(11, scale(lb), scale(ub), SobolSample())
-    push!(samp_g1e1, tuple(scale(guess_g1e1)...))
-    init_val = min_target.(samp_g1e1)
-
-    surrogate_g1e1 = Kriging(samp_g1e1, init_val, scale(lb), scale(ub))
-    @assert isapprox(surrogate_g1e1(scale(guess_g1e1)), ssq_g1e1(guess_g1e1))
-
-    sur_res_g1e1 = surrogate_optimize(min_target, EI(), scale(lb), scale(ub), surrogate_g1e1, RandomSample(), num_new_samples=10, maxiters=500)
-    push!(
-        benchs,
-        (
-            method="Kriging EI", model="g1e1", popt=unscale(collect(sur_res_g1e1[1])),
-            vmin=sur_res_g1e1[2], fcalls=length(samp_g1e1)
-        )
-    )
-
-
+    # Convert results to DataFrame
     df = DataFrame(benchs)
-    #@infiltrate
     df
 end
