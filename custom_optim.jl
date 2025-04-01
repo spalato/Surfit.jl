@@ -62,7 +62,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
     # Fill the remaining sample points using sample(...)
     if length(scaled_corners) < initsamp
         # Generate Sobol sample points in the scaled space
-        remaining_sample = sample(initsamp - length(scaled_corners), scale(lb), scale(ub), SobolSample())
+        remaining_sample = sample(initsamp - length(scaled_corners), scale(lb), scale(ub), RandomSample())
     else
         # If we have enough corners, just use them
         remaining_sample = []
@@ -70,10 +70,10 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
 
     samp = vcat(scaled_corners, remaining_sample)
     push!(samp, tuple(scale(guess)...))
-    init_val = min_target.(samp)
+    samp_val = min_target.(samp)
 
     surrogate = RadialBasis(
-        samp, init_val, scale(lb), scale(ub), rad=thinplateRadial();
+        samp, samp_val, scale(lb), scale(ub), rad=thinplateRadial();
         regularization=1e-12 # Add small regularization term
     )
     #@info "impact of regularization" surrogate(scale(guess)), ssq(guess)
@@ -81,13 +81,13 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
 
     current_min = scale(guess)
     current_val = surrogate(current_min)
-    evaluations = length(samp)
     
     for nit in 1:(f_calls-initsamp)
         # Step 1: Minimize surrogate using Nelder-Mead
+        dfc = TwiceDifferentiableConstraints(scale(lb), scale(ub))
         res = optimize(
-            surrogate, scale(lb), scale(ub), current_min,
-            Fminbox(BFGS()),
+            surrogate, dfc, current_min,
+            IPNewton(),
             Optim.Options(store_trace=true, trace_simplex=true);
             autodiff = :forward
         )
@@ -95,38 +95,43 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
         new_val = Optim.minimum(res)
         
         
-        # Step 2: Evaluate target function at new minimum and update surrogate
-        true_val = ssq(unscale(collect(new_min)))
-        push!(samp, tuple(new_min...))
-        push!(init_val, true_val)
-
-        @info "IT $(nit) surrogate NM fcalls $(Optim.f_calls(res)) $(new_val) $(true_val) $(current_val)"
-        if new_val > current_val
-            @warn "Surrogate minimum is worse than current minimum!"
-            new_min = current_min
-            new_val = current_val
+            # Try: if we made a small step, add a small region around it. Like the latest simplex
+        if new_val > current_val || any(new_min .< scale(lb)) || any(new_min .> scale(ub))
+            if new_val > current_val
+                @warn "Surrogate minimum is worse than current minimum!"
+            else 
+                @warn "New minimum is out of bounds!"
+            end
+            # add sample points using Sobol
+            # Generate Sobol sample points in the scaled space
+            new_samples = sample(10, scale(lb), scale(ub), SobolSample())
+            # Add the new samples to the existing sample points
+            samp = vcat(samp, new_samples)
+            samp_val = vcat(samp_val, min_target.(new_samples))
+        else
+            # Step 2: Evaluate target function at new minimum and update surrogate
+            true_val = ssq(unscale(collect(new_min)))
+            push!(samp, tuple(new_min...))
+            push!(samp_val, true_val)
+            @info "IT $(nit) surrogate NM fcalls $(Optim.f_calls(res)) $(new_val) $(true_val) $(current_val)"
+        
+            # Step 3: Check tolerances
+            if norm(new_min .- current_min) < x_tol && abs(true_val - current_val) < f_tol
+                return (
+                    method="Surrogate", model=string(model), popt=unscale(collect(new_min)),
+                    vmin=true_val, fcalls=length(samp)
+                ), samp_val
+            end
         end
-        # Check if new minimum is within bounds 
-        if any(new_min .< scale(lb)) || any(new_min .> scale(ub))
-            @warn "New minimum is out of bounds!"
-            new_min = current_min
-            new_val = current_val
-        end
+        
 
-        # Try: if we made a small step, add a small region around it. Like the latest simplex
-        # Step 3: Check tolerances
-        if norm(new_min .- current_min) < x_tol && abs(true_val - current_val) < f_tol
-            return (
-                method="Surrogate", model=string(model), popt=unscale(collect(new_min)),
-                vmin=true_val, fcalls=length(samp)
-            ), init_val
-        end
 
-        min_index = argmin(init_val)
+
+        min_index = argmin(samp_val)
         current_min = collect(samp[min_index])
-        current_val = init_val[min_index]
+        current_val = samp_val[min_index]
         surrogate = RadialBasis(
-            samp, init_val, scale(lb), scale(ub), rad=thinplateRadial();
+            samp, samp_val, scale(lb), scale(ub), rad=thinplateRadial();
             regularization=1e-12 # Add small regularization term
         )
     end
@@ -134,7 +139,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
     return (
         method="Surrogate", model=string(model), popt=unscale(collect(current_min)),
         vmin=current_val, fcalls=length(samp)
-    ), init_val
+    ), samp_val
 end
 
 function main()
@@ -170,9 +175,9 @@ function main()
     @assert all(lb_g1e1 .< ret_nm[:popt] .< ub_g1e1)
 
     # Perform optimization using surrogate
-    ret = surrogate_optim(e1, t, y_exp, guess_e1, lb_e1, ub_e1, 1e-6, 1e-6, 100)
+    ret = surrogate_optim(e1, t, y_exp, guess_e1, lb_e1, ub_e1, 1e-9, 1e-9, 200)
     push!(benchs, ret[1])
-    ret = surrogate_optim(g1e1, t, y_exp, guess_g1e1, lb_g1e1, ub_g1e1, 1e-6, 1e-6, 100)
+    ret = surrogate_optim(g1e1, t, y_exp, guess_g1e1, lb_g1e1, ub_g1e1, 1e-9, 1e-9, 200)
     push!(benchs, ret[1])
 
 
