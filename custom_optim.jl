@@ -62,7 +62,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
     # Fill the remaining sample points using sample(...)
     if length(scaled_corners) < initsamp
         # Generate Sobol sample points in the scaled space
-        remaining_sample = sample(initsamp - length(scaled_corners), scale(lb), scale(ub), RandomSample())
+        remaining_sample = sample(initsamp - length(scaled_corners), scale(lb), scale(ub), SobolSample())
     else
         # If we have enough corners, just use them
         remaining_sample = []
@@ -84,10 +84,9 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
     
     for nit in 1:(f_calls-initsamp)
         # Step 1: Minimize surrogate using Nelder-Mead
-        dfc = TwiceDifferentiableConstraints(scale(lb), scale(ub))
         res = optimize(
-            surrogate, dfc, current_min,
-            IPNewton(),
+            surrogate, current_min,
+            NelderMead(),
             Optim.Options(store_trace=true, trace_simplex=true);
             autodiff = :forward
         )
