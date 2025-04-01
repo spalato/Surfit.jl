@@ -84,6 +84,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
     
     while length(samp) < f_calls
         # Step 1: Minimize surrogate using Nelder-Mead
+        # TODO: check lmfit's approach to bounds. Then get rid of the "minimum out of bounds" handling
         res = optimize(
             surrogate, current_min,
             NelderMead(),
@@ -93,8 +94,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
         new_min = Optim.minimizer(res)
         new_val = Optim.minimum(res)
         
-        
-            # Try: if we made a small step, add a small region around it. Like the latest simplex
+        # Try: if we made a small step, add a small region around it. Like the latest simplex
         if any(new_min .< scale(lb)) || any(new_min .> scale(ub))
             @warn "New minimum is out of bounds!"
             # add sample points using Sobol
@@ -104,6 +104,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
             samp = vcat(samp, new_samples)
             samp_val = vcat(samp_val, min_target.(new_samples))
         else
+            # TODO: handle "small steps" more efficiently. Check last simplex and add it to the sample
             if new_val > current_val
                 @warn "New minimum is worse than current minimum!"
             end
@@ -124,7 +125,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
                 return (
                     method="Surrogate", model=string(model), popt=unscale(collect(new_min)),
                     vmin=true_val, fcalls=length(samp)
-                ), samp_val
+                ), samp, samp_val
             end
         end
         
@@ -143,7 +144,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
     return (
         method="Surrogate", model=string(model), popt=unscale(collect(current_min)),
         vmin=current_val, fcalls=length(samp)
-    ), samp_val
+    ), samp, samp_val
 end
 
 function main()
