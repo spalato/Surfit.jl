@@ -32,7 +32,7 @@ function default_optim(model, t, y_exp, guess)
     # Nelder-Mead optimization
     res = optimize(
         ssq, guess,
-        Optim.Options(store_trace=true, trace_simplex=true);
+        Optim.Options(store_trace=true, trace_simplex=true, allow_f_increases=false);
         autodiff = :forward
     )
     return (
@@ -49,6 +49,7 @@ function bounded_optim(model, t, y_exp, guess, lb, ub)
     res = optimize(
         ssq, lb, ub, guess,
         Fminbox(),
+        Optim.Options(store_trace=true, trace_simplex=true, allow_f_increases=false);
         autodiff = :forward
     )
     return (
@@ -111,6 +112,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
                 outer_f_abstol=f_tol,
                 f_abstol=f_tol,
                 x_abstol=x_tol,
+                allow_f_increases=false,
 
             );
             autodiff = :forward
