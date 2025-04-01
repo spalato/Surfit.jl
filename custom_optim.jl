@@ -86,12 +86,21 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
     for nit in 1:(f_calls-initsamp)
         # Step 1: Minimize surrogate using Nelder-Mead
         res = optimize(
-            surrogate, current_min,
+            surrogate, scale(lb), scale(ub), current_min,
+            Fminbox(BFGS()),
             Optim.Options(store_trace=true, trace_simplex=true);
             autodiff = :forward
         )
         new_min = Optim.minimizer(res)
         new_val = Optim.minimum(res)
+        
+        
+        # Step 2: Evaluate target function at new minimum and update surrogate
+        true_val = ssq(unscale(collect(new_min)))
+        push!(samp, tuple(new_min...))
+        push!(init_val, true_val)
+
+        @info "IT $(nit) surrogate NM fcalls $(Optim.f_calls(res)) $(new_val) $(true_val) $(current_val)"
         if new_val > current_val
             @warn "Surrogate minimum is worse than current minimum!"
             new_min = current_min
@@ -103,13 +112,6 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
             new_min = current_min
             new_val = current_val
         end
-        
-        # Step 2: Evaluate target function at new minimum and update surrogate
-        true_val = ssq(unscale(collect(new_min)))
-        push!(samp, tuple(new_min...))
-        push!(init_val, true_val)
-
-        @info "IT $(nit) surrogate NM fcalls $(Optim.f_calls(res)) $(new_val) $(true_val) $(current_val)"
 
         # Try: if we made a small step, add a small region around it. Like the latest simplex
         # Step 3: Check tolerances
