@@ -52,7 +52,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
     min_target = unscaled(ssq, spans)
 
     @assert unscale(scale(guess)) == guess
-    samp = sample(initsamp, scale(lb), scale(ub), SobolSample())
+    samp = sample(initsamp, scale(lb), scale(ub), GridSample())
     push!(samp, tuple(scale(guess)...))
     init_val = min_target.(samp)
 
@@ -127,15 +127,19 @@ function main()
     ub_e1 = [0.6, 1/0.1, 2.58]
 
     guess_g1e1 = [0.25, 1/0.4, 0.25, 1/0.6, 2.5]
-    lb_g1e1 = [0.1, 1/0.7, 0.1, 1/0.7, 2.5]
+    lb_g1e1 = [0.1, 1/0.7, 0.1, 1/0.7, 2.45]
     ub_g1e1 = [0.6, 1/0.1, 0.6, 1/0.1, 2.58]
 
     # Benchmarks
     benchs = []
 
     # Perform optimization using Nelder-Mead
-    push!(benchs, default_optim(e1, t, y_exp, guess_e1))
-    push!(benchs, default_optim(g1e1, t, y_exp, guess_g1e1))
+    ret_nm = default_optim(e1, t, y_exp, guess_e1)
+    push!(benchs, ret_nm)
+    @assert all(lb_e1 .< ret_nm[:popt] .< ub_e1)
+    ret_nm = default_optim(g1e1, t, y_exp, guess_g1e1)
+    push!(benchs, ret_nm)
+    @assert all(lb_g1e1 .< ret_nm[:popt] .< ub_g1e1)
 
     # Perform optimization using surrogate
     push!(benchs, surrogate_optim(e1, t, y_exp, guess_e1, lb_e1, ub_e1, 1e-6, 1e-6, 100))
