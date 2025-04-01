@@ -42,6 +42,8 @@ function default_optim(model, t, y_exp, guess)
 end
 
 function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=21)
+    @info "Surrogate optimization"
+    @info "model $(model) guess $(guess) lb $(lb) ub $(ub)"
     resid = resid_vs(t, y_exp, model)
     ssq = ssq_of(resid)
     @assert all(lb .< guess .< ub)
@@ -52,7 +54,21 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
     min_target = unscaled(ssq, spans)
 
     @assert unscale(scale(guess)) == guess
-    samp = sample(initsamp, scale(lb), scale(ub), GridSample())
+
+    # Generate all corners of the hypercube defined by lb and ub
+    corners = vec(collect(Iterators.product(zip(lb, ub)...)))
+    scaled_corners = [scale(collect(corner)) for corner in corners]
+    @info "N corners: $(length(scaled_corners)) adding $(initsamp - length(scaled_corners))"
+    # Fill the remaining sample points using sample(...)
+    if length(scaled_corners) < initsamp
+        # Generate Sobol sample points in the scaled space
+        remaining_sample = sample(initsamp - length(scaled_corners), scale(lb), scale(ub), SobolSample())
+    else
+        # If we have enough corners, just use them
+        remaining_sample = []
+    end
+
+    samp = vcat(scaled_corners, remaining_sample)
     push!(samp, tuple(scale(guess)...))
     init_val = min_target.(samp)
 
@@ -60,7 +76,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
         samp, init_val, scale(lb), scale(ub), rad=thinplateRadial();
         regularization=1e-12 # Add small regularization term
     )
-    @info "impact of regularization" surrogate(scale(guess)), ssq(guess)
+    #@info "impact of regularization" surrogate(scale(guess)), ssq(guess)
     @assert isapprox(surrogate(scale(guess)), ssq(guess), rtol=1E-6)
 
     current_min = scale(guess)
@@ -77,14 +93,13 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
         new_min = Optim.minimizer(res)
         new_val = Optim.minimum(res)
 
-
         # Step 2: Evaluate target function at new minimum and update surrogate
         true_val = ssq(unscale(collect(new_min)))
         push!(samp, tuple(new_min...))
         push!(init_val, true_val)
 
         @info "IT $(nit) surrogate NM fcalls $(Optim.f_calls(res)) $(new_val) $(true_val) $(current_val)"
-        # Try with bounds.
+
         # Try: if we made a small step, add a small region around it. Like the latest simplex
         # Step 3: Check tolerances
         if norm(new_min .- current_min) < x_tol && abs(true_val - current_val) < f_tol
