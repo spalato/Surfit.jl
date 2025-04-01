@@ -44,7 +44,8 @@ end
 function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=21)
     resid = resid_vs(t, y_exp, model)
     ssq = ssq_of(resid)
-
+    @assert all(lb .< guess .< ub)
+    @assert length(lb) == length(guess) == length(ub)
     spans = ub .- lb
     scale = scaled(identity, spans)
     unscale = unscaled(identity, spans)
@@ -83,11 +84,13 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
         push!(init_val, true_val)
 
         @info "IT $(nit) surrogate NM fcalls $(Optim.f_calls(res)) $(new_val) $(true_val) $(current_val)"
+        # Try with bounds.
+        # Try: if we made a small step, add a small region around it. Like the latest simplex
         # Step 3: Check tolerances
         if norm(new_min .- current_min) < x_tol && abs(true_val - current_val) < f_tol
             return (
                 method="Surrogate", model=string(model), popt=unscale(collect(new_min)),
-                vmin=true_val, fcalls=evaluations
+                vmin=true_val, fcalls=length(samp)
             )
         end
 
@@ -102,7 +105,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
 
     return (
         method="Surrogate", model=string(model), popt=unscale(collect(current_min)),
-        vmin=current_val, fcalls=evaluations
+        vmin=current_val, fcalls=length(samp)
     )
 end
 
