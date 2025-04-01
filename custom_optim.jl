@@ -91,7 +91,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
             return (
                 method="Surrogate", model=string(model), popt=unscale(collect(new_min)),
                 vmin=true_val, fcalls=length(samp)
-            )
+            ), init_val
         end
 
         min_index = argmin(init_val)
@@ -106,7 +106,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
     return (
         method="Surrogate", model=string(model), popt=unscale(collect(current_min)),
         vmin=current_val, fcalls=length(samp)
-    )
+    ), init_val
 end
 
 function main()
@@ -142,8 +142,11 @@ function main()
     @assert all(lb_g1e1 .< ret_nm[:popt] .< ub_g1e1)
 
     # Perform optimization using surrogate
-    push!(benchs, surrogate_optim(e1, t, y_exp, guess_e1, lb_e1, ub_e1, 1e-6, 1e-6, 100))
-    push!(benchs, surrogate_optim(g1e1, t, y_exp, guess_g1e1, lb_g1e1, ub_g1e1, 1e-6, 1e-6, 100))
+    ret = surrogate_optim(e1, t, y_exp, guess_e1, lb_e1, ub_e1, 1e-6, 1e-6, 100)
+    push!(benchs, ret[1])
+    ret = surrogate_optim(g1e1, t, y_exp, guess_g1e1, lb_g1e1, ub_g1e1, 1e-6, 1e-6, 100)
+    push!(benchs, ret[1])
+
 
     # Convert results to DataFrame
     df = DataFrame(benchs)
