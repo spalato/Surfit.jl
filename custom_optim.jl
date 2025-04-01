@@ -41,6 +41,22 @@ function default_optim(model, t, y_exp, guess)
     )
 end
 
+function bounded_optim(model, t, y_exp, guess, lb, ub)
+    resid = resid_vs(t, y_exp, model)
+    ssq = ssq_of(resid)
+
+    # Fminbox optimization with bounds
+    res = optimize(
+        ssq, lb, ub, guess,
+        Fminbox(),
+        autodiff = :forward
+    )
+    return (
+        method="LBFGS bounded", model=string(model), popt=Optim.minimizer(res),
+        vmin=Optim.minimum(res), fcalls=Optim.f_calls(res)+Optim.g_calls(res)
+    )
+end
+
 function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=50)
     @info "Surrogate optimization"
     @info "model $(model) guess $(guess) lb $(lb) ub $(ub)"
@@ -86,9 +102,17 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
         # Step 1: Minimize surrogate using Nelder-Mead
         # TODO: check lmfit's approach to bounds. Then get rid of the "minimum out of bounds" handling
         res = optimize(
-            surrogate, current_min,
+            surrogate,  current_min,
             NelderMead(),
-            Optim.Options(store_trace=true, trace_simplex=true);
+            Optim.Options(
+                store_trace=true,
+                trace_simplex=true,
+                outer_x_abstol=x_tol,
+                outer_f_abstol=f_tol,
+                f_abstol=f_tol,
+                x_abstol=x_tol,
+
+            );
             autodiff = :forward
         )
         new_min = Optim.minimizer(res)
@@ -105,9 +129,6 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
             samp_val = vcat(samp_val, min_target.(new_samples))
         else
             # TODO: handle "small steps" more efficiently. Check last simplex and add it to the sample
-            if new_val > current_val
-                @warn "New minimum is worse than current minimum!"
-            end
             # Step 2: Evaluate target function at new minimum and update surrogate
             true_val = ssq(unscale(collect(new_min)))
             if new_val > current_val
@@ -179,11 +200,15 @@ function main()
     push!(benchs, ret_nm)
     @assert all(lb_g1e1 .< ret_nm[:popt] .< ub_g1e1)
 
+    # Perform optimization using bounded Fminbox
+    push!(benchs, bounded_optim(e1, t, y_exp, guess_e1, lb_e1, ub_e1))
+    push!(benchs, bounded_optim(g1e1, t, y_exp, guess_g1e1, lb_g1e1, ub_g1e1))
+
     # Perform optimization using surrogate
-    ret = surrogate_optim(e1, t, y_exp, guess_e1, lb_e1, ub_e1, 1e-6, 1e-6, 200)
+    ret = surrogate_optim(e1, t, y_exp, guess_e1, lb_e1, ub_e1, 1e-6, 1e-6, 200, 20)
     push!(benchs, ret[1])
-    ret = surrogate_optim(g1e1, t, y_exp, guess_g1e1, lb_g1e1, ub_g1e1, 1e-6, 1e-6, 200)
-    push!(benchs, ret[1])
+    # ret = surrogate_optim(g1e1, t, y_exp, guess_g1e1, lb_g1e1, ub_g1e1, 1e-6, 1e-6, 500)
+    # push!(benchs, ret[1])
 
 
     # Convert results to DataFrame
