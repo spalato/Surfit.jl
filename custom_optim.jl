@@ -41,7 +41,7 @@ function default_optim(model, t, y_exp, guess)
     )
 end
 
-function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=21)
+function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=50)
     @info "Surrogate optimization"
     @info "model $(model) guess $(guess) lb $(lb) ub $(ub)"
     resid = resid_vs(t, y_exp, model)
@@ -92,7 +92,18 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
         )
         new_min = Optim.minimizer(res)
         new_val = Optim.minimum(res)
-
+        if new_val > current_val
+            @warn "Surrogate minimum is worse than current minimum!"
+            new_min = current_min
+            new_val = current_val
+        end
+        # Check if new minimum is within bounds 
+        if any(new_min .< scale(lb)) || any(new_min .> scale(ub))
+            @warn "New minimum is out of bounds!"
+            new_min = current_min
+            new_val = current_val
+        end
+        
         # Step 2: Evaluate target function at new minimum and update surrogate
         true_val = ssq(unscale(collect(new_min)))
         push!(samp, tuple(new_min...))
