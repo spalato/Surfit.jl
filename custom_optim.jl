@@ -99,28 +99,33 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
     current_min = scale(guess)
     current_val = surrogate(current_min)
     
+    # define mapping to internal bounded coordinates, inspired by lmfit and MINUIT
+    # see: https://lmfit.github.io/lmfit-py/bounds.html
+    # https://github.com/lmfit/lmfit-py/blob/master/lmfit/parameter.py#L925 (setup_bounds)
+    # TODO: we are both scaling to [0,1] and using arcsin. This is not necessary.
+    to_internal(p) = asin.(2*(p .- scale(lb)) ./ (scale(ub) .- scale(lb)) .- 1)
+    from_internal(p) = scale(lb) .+ (scale(ub) .- scale(lb)) .* (0.5*(sin.(p) .+ 1)) # p_internal to p_bounded
+
     while length(samp) < f_calls
         # Step 1: Minimize surrogate using Nelder-Mead
-        # TODO: check lmfit's approach to bounds. Then get rid of the "minimum out of bounds" handling
+        bounded_surrogate = pi -> surrogate(from_internal(pi))
         res = optimize(
-            surrogate,  current_min,
+            bounded_surrogate,  to_internal(current_min),
             NelderMead(),
             Optim.Options(
                 store_trace=true,
                 trace_simplex=true,
-                outer_x_abstol=x_tol,
                 outer_f_abstol=f_tol,
                 f_abstol=f_tol,
-                x_abstol=x_tol,
                 allow_f_increases=false,
 
             );
             autodiff = :forward
         )
-        new_min = Optim.minimizer(res)
+        new_min = from_internal(Optim.minimizer(res))
         new_val = Optim.minimum(res)
         
-        # Try: if we made a small step, add a small region around it. Like the latest simplex
+        # Try: if we made a small step, add a small region around it. Like the latest simplex. Or the last centroid and its reflection through the point.
         if any(new_min .< scale(lb)) || any(new_min .> scale(ub))
             @warn "New minimum is out of bounds!"
             # add sample points using Sobol
@@ -133,12 +138,12 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
             # TODO: handle "small steps" more efficiently. Check last simplex and add it to the sample
             # Step 2: Evaluate target function at new minimum and update surrogate
             true_val = ssq(unscale(collect(new_min)))
-            if new_val > current_val
-                @warn "New minimum is worse than current minimum!"
-            end
-            if true_val > current_val
-                @warn "New minimum (true) is worse than current minimum!"
-            end
+            # if new_val > current_val
+            #     @warn "New minimum is worse than current minimum!"
+            # end
+            # if true_val > current_val
+            #     @warn "New minimum (true) is worse than current minimum!"
+            # end
             push!(samp, tuple(new_min...))
             push!(samp_val, true_val)
             @info "IT $(length(samp)) surrogate NM fcalls $(Optim.f_calls(res)) $(new_val) $(true_val) $(current_val)"
@@ -209,8 +214,8 @@ function main()
     # Perform optimization using surrogate
     ret = surrogate_optim(e1, t, y_exp, guess_e1, lb_e1, ub_e1, 1e-9, 1e-9, 200, 20)
     push!(benchs, ret[1])
-    # ret = surrogate_optim(g1e1, t, y_exp, guess_g1e1, lb_g1e1, ub_g1e1, 1e-6, 1e-6, 500)
-    # push!(benchs, ret[1])
+    ret = surrogate_optim(g1e1, t, y_exp, guess_g1e1, lb_g1e1, ub_g1e1, 1e-6, 1e-6, 500)
+    push!(benchs, ret[1])
 
 
     # Convert results to DataFrame
