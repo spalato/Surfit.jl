@@ -10,6 +10,7 @@ using Plots
 using DataFrames
 using CSV
 using LinearAlgebra # Added to define `norm`
+using MAT
 #using Radials: RadialBasis, thinplateRadial # Import updated RadialBasis
 
 plotlyjs(size=(800, 600))
@@ -54,7 +55,7 @@ function bounded_optim(model, t, y_exp, guess, lb, ub)
     )
     return (
         method="LBFGS bounded", model=string(model), popt=Optim.minimizer(res),
-        vmin=Optim.minimum(res), fcalls=Optim.f_calls(res)+Optim.g_calls(res)
+        vmin=Optim.minimum(res), fcalls=Optim.f_calls(res)+length(guess)*Optim.g_calls(res)
     )
 end
 
@@ -71,11 +72,11 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
     min_target = unscaled(ssq, spans)
 
     @assert unscale(scale(guess)) == guess
-
+    print("Initializing")
     # Generate all corners of the hypercube defined by lb and ub
     corners = vec(collect(Iterators.product(zip(lb, ub)...)))
     scaled_corners = [scale(collect(corner)) for corner in corners]
-    @info "N corners: $(length(scaled_corners)) adding $(initsamp - length(scaled_corners))"
+   # @info "N corners: $(length(scaled_corners)) adding $(initsamp - length(scaled_corners))"
     # Fill the remaining sample points using sample(...)
     if length(scaled_corners) < initsamp
         # Generate Sobol sample points in the scaled space
@@ -105,7 +106,6 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
     # TODO: we are both scaling to [0,1] and using arcsin. This is not necessary.
     to_internal(p) = asin.(2*(p .- scale(lb)) ./ (scale(ub) .- scale(lb)) .- 1)
     from_internal(p) = scale(lb) .+ (scale(ub) .- scale(lb)) .* (0.5*(sin.(p) .+ 1)) # p_internal to p_bounded
-
     while length(samp) < f_calls
         # Step 1: Minimize surrogate using Nelder-Mead
         bounded_surrogate = pi -> surrogate(from_internal(pi))
@@ -124,7 +124,14 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
         )
         new_min = from_internal(Optim.minimizer(res))
         new_val = Optim.minimum(res)
-        
+        true_val = ssq(unscale(collect(new_min)))
+        # TODO: simplex_value_trace has shape (n_params+1m n_calls)
+        # TODO: simplex_trace has the shape (n_params, n_params+1, n_calls). It's ok...
+        # TODO: find a way to save the simplex_trace and inspect it.
+        # TODO: How does the size of the simplex relate to the size of the steps from the main loop?
+        @infiltrate 
+
+        print("\rIt: $(length(samp)) surrogate fcalls $(Optim.f_calls(res)) $(new_val) $(true_val) $(current_val)")
         # Try: if we made a small step, add a small region around it. Like the latest simplex. Or the last centroid and its reflection through the point.
         if any(new_min .< scale(lb)) || any(new_min .> scale(ub))
             @warn "New minimum is out of bounds!"
@@ -137,7 +144,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
         else
             # TODO: handle "small steps" more efficiently. Check last simplex and add it to the sample
             # Step 2: Evaluate target function at new minimum and update surrogate
-            true_val = ssq(unscale(collect(new_min)))
+            
             # if new_val > current_val
             #     @warn "New minimum is worse than current minimum!"
             # end
@@ -146,20 +153,26 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
             # end
             push!(samp, tuple(new_min...))
             push!(samp_val, true_val)
-            @info "IT $(length(samp)) surrogate NM fcalls $(Optim.f_calls(res)) $(new_val) $(true_val) $(current_val)"
+            #@info "IT $(length(samp)) surrogate NM fcalls $(Optim.f_calls(res)) $(new_val) $(true_val) $(current_val)"
         
             # Step 3: Check tolerances
-            if norm(new_min .- current_min) < x_tol && abs(true_val - current_val) < f_tol
-                return (
-                    method="Surrogate", model=string(model), popt=unscale(collect(new_min)),
-                    vmin=true_val, fcalls=length(samp)
-                ), samp, samp_val
+            if norm(new_min .- current_min) < x_tol && abs(true_val - current_val) < f_tol # TODO: change to `isapproxs`
+                DelimitedFiles.writedlm(
+                    "trace/$(string(model))_$(length(samp))_val.txt",
+                    transpose(stack(Optim.simplex_value_trace(res))))
+                break
             end
         end
-        
-
-
-
+        # Write out the simplex trace.
+        matwrite("trace/$(string(model))_$(length(samp))_simplex.mat",
+            Dict(
+                "values" => stack(Optim.simplex_value_trace(res)),
+                "points" => stack(stack(unscale(from_internal(Optim.simplex_trace(res)))))
+            )
+        )
+        # DelimitedFiles.writedlm(
+        #     "trace/$(string(model))_$(length(samp))_val.txt",
+        #     transpose(stack(Optim.simplex_value_trace(res))))
         min_index = argmin(samp_val)
         current_min = collect(samp[min_index])
         current_val = samp_val[min_index]
@@ -168,11 +181,15 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
             regularization=1e-12 # Add small regularization term
         )
     end
+    print("  Done\n")
 
+    min_index = argmin(samp_val)
+    current_min = collect(samp[min_index])
+    current_val = samp_val[min_index]
     return (
         method="Surrogate", model=string(model), popt=unscale(collect(current_min)),
         vmin=current_val, fcalls=length(samp)
-    ), samp, samp_val
+    ), unscale.(samp), samp_val
 end
 
 function main()
@@ -193,8 +210,8 @@ function main()
     ub_e1 = [0.6, 1/0.1, 2.58]
 
     guess_g1e1 = [0.25, 1/0.4, 0.25, 1/0.6, 2.5]
-    lb_g1e1 = [0.1, 1/0.7, 0.1, 1/0.7, 2.45]
-    ub_g1e1 = [0.6, 1/0.1, 0.6, 1/0.1, 2.58]
+    lb_g1e1 = [0.0, 1.5, 0.0, 1/0.7, 2.45]
+    ub_g1e1 = [0.6, 10.0, 0.6, 1/0.3, 2.58]
 
     # Benchmarks
     benchs = []
@@ -212,7 +229,7 @@ function main()
     push!(benchs, bounded_optim(g1e1, t, y_exp, guess_g1e1, lb_g1e1, ub_g1e1))
 
     # Perform optimization using surrogate
-    ret = surrogate_optim(e1, t, y_exp, guess_e1, lb_e1, ub_e1, 1e-9, 1e-9, 200, 20)
+    ret = surrogate_optim(e1, t, y_exp, guess_e1, lb_e1, ub_e1, 1e-6, 1e-6, 200, 20)
     push!(benchs, ret[1])
     ret = surrogate_optim(g1e1, t, y_exp, guess_g1e1, lb_g1e1, ub_g1e1, 1e-6, 1e-6, 500)
     push!(benchs, ret[1])
