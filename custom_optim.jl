@@ -75,7 +75,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
     print("Initializing")
     # Generate all corners of the hypercube defined by lb and ub
     corners = vec(collect(Iterators.product(zip(lb, ub)...)))
-    scaled_corners = [scale(collect(corner)) for corner in corners]
+    scaled_corners = [scale(collect(corner)) for corner in corners] # TODO: convert to vector of tuples
    # @info "N corners: $(length(scaled_corners)) adding $(initsamp - length(scaled_corners))"
     # Fill the remaining sample points using sample(...)
     if length(scaled_corners) < initsamp
@@ -107,6 +107,14 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
     to_internal(p) = asin.(2*(p .- scale(lb)) ./ (scale(ub) .- scale(lb)) .- 1)
     from_internal(p) = scale(lb) .+ (scale(ub) .- scale(lb)) .* (0.5*(sin.(p) .+ 1)) # p_internal to p_bounded
     while length(samp) < f_calls
+        @assert length(samp) == length(samp_val)
+        min_index = argmin(samp_val)
+        current_min = collect(samp[min_index])
+        current_val = samp_val[min_index]
+        surrogate = RadialBasis(
+            samp, samp_val, scale(lb), scale(ub), rad=cubicRadial();
+            regularization=1e-15 # Add small regularization term
+        )
         # Step 1: Minimize surrogate using Nelder-Mead
         bounded_surrogate = pi -> surrogate(from_internal(pi))
         res = optimize(
@@ -125,6 +133,8 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
         new_min = from_internal(Optim.minimizer(res))
         new_val = Optim.minimum(res)
         true_val = ssq(unscale(collect(new_min)))
+        push!(samp, tuple(new_min...))
+        push!(samp_val, true_val)
         # For good convergence, the simplex has to be quite small, too small to be usable.
         # What we can use instead as a loop criterion is:
         # TODO: small steps , 0.05, 0.02 in internal units seem good... Simple is good.
@@ -133,7 +143,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
         # Simple way: check if we have at least 1 point on each side of the minimum along every direction. If not, reflect one point.
        #@infiltrate 
 
-        print("\rIt: $(length(samp)) surrogate fcalls $(Optim.f_calls(res)) $(round(new_val;digits=6)) $(round(true_val;digits=6)) $(round(current_val;digits=6))          ")
+        print("It: $(length(samp)) surrogate fcalls $(Optim.f_calls(res)) $(round(true_val;digits=6)) $(round(current_val;digits=6)) at $(min_index)\n")
         # Try: if we made a small step, add a small region around it. Like the latest simplex. Or the last centroid and its reflection through the point.
         if any(new_min .< scale(lb)) || any(new_min .> scale(ub))
             @warn "New minimum is out of bounds!"
@@ -143,30 +153,29 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
             # Add the new samples to the existing sample points
             samp = vcat(samp, new_samples)
             samp_val = vcat(samp_val, min_target.(new_samples))
-        else
-            # TODO: handle "small steps" more efficiently. Check last simplex and add it to the sample
-            # Step 2: Evaluate target function at new minimum and update surrogate
-            
-            # if new_val > current_val
-            #     @warn "New minimum is worse than current minimum!"
-            # end
-            # if true_val > current_val
-            #     @warn "New minimum (true) is worse than current minimum!"
-            # end
-            push!(samp, tuple(new_min...))
-            push!(samp_val, true_val)
-            #@info "IT $(length(samp)) surrogate NM fcalls $(Optim.f_calls(res)) $(new_val) $(true_val) $(current_val)"
-        
-            # Step 3: Check tolerances
-            if norm(new_min .- current_min) < x_tol && abs(true_val - current_val) < f_tol # TODO: change to `isapprox`
+        # are we done?
+        elseif norm(new_min .- current_min) < x_tol && abs(true_val - current_val) < f_tol # TODO: change to `isapprox`
                 matwrite("trace/$(string(model))_$(length(samp))_simplex.mat",
                     Dict(
                         "values" => stack(Optim.simplex_value_trace(res)),
                         "points" => stack(stack(Optim.simplex_trace(res)))
                     )
             )
-                break
-            end
+            break
+        # If step is small, add the last simplex to the sample
+        elseif max(abs.(new_min .- current_min)...) < 0.05
+            @info "Step is small, adding a simplex"
+            # pick the simplex 20% in
+            idx = div(size(Optim.simplex_trace(res))[1], 5)
+            simplex = from_internal.(Optim.simplex_trace(res)[idx])
+            values = min_target.(simplex)
+            samp = vcat(samp, simplex)
+            samp_val = vcat(samp_val, values)
+        # Step is large, add the new minimum to the sample
+        else
+            @info "Big step, adding new minimum"
+                # push!(samp, tuple(new_min...))
+                # push!(samp_val, true_val)
         end
         # Write out the simplex trace.
         matwrite("trace/$(string(model))_$(length(samp))_simplex.mat",
@@ -178,13 +187,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
         # DelimitedFiles.writedlm(
         #     "trace/$(string(model))_$(length(samp))_val.txt",
         #     transpose(stack(Optim.simplex_value_trace(res))))
-        min_index = argmin(samp_val)
-        current_min = collect(samp[min_index])
-        current_val = samp_val[min_index]
-        surrogate = RadialBasis(
-            samp, samp_val, scale(lb), scale(ub), rad=cubicRadial();
-            regularization=1e-12 # Add small regularization term
-        )
+
     end
     print("  Done\n")
 
