@@ -129,9 +129,9 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
         # TODO: simplex_trace has the shape (n_params, n_params+1, n_calls). It's ok...
         # TODO: find a way to save the simplex_trace and inspect it.
         # TODO: How does the size of the simplex relate to the size of the steps from the main loop?
-        @infiltrate 
+       #@infiltrate 
 
-        print("\rIt: $(length(samp)) surrogate fcalls $(Optim.f_calls(res)) $(new_val) $(true_val) $(current_val)")
+        print("\rIt: $(length(samp)) surrogate fcalls $(Optim.f_calls(res)) $(round(new_val;digits=6)) $(round(true_val;digits=6)) $(round(current_val;digits=6))          ")
         # Try: if we made a small step, add a small region around it. Like the latest simplex. Or the last centroid and its reflection through the point.
         if any(new_min .< scale(lb)) || any(new_min .> scale(ub))
             @warn "New minimum is out of bounds!"
@@ -156,10 +156,13 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
             #@info "IT $(length(samp)) surrogate NM fcalls $(Optim.f_calls(res)) $(new_val) $(true_val) $(current_val)"
         
             # Step 3: Check tolerances
-            if norm(new_min .- current_min) < x_tol && abs(true_val - current_val) < f_tol # TODO: change to `isapproxs`
-                DelimitedFiles.writedlm(
-                    "trace/$(string(model))_$(length(samp))_val.txt",
-                    transpose(stack(Optim.simplex_value_trace(res))))
+            if norm(new_min .- current_min) < x_tol && abs(true_val - current_val) < f_tol # TODO: change to `isapprox`
+                matwrite("trace/$(string(model))_$(length(samp))_simplex.mat",
+                    Dict(
+                        "values" => stack(Optim.simplex_value_trace(res)),
+                        "points" => unscale.(from_internal.(stack(stack(Optim.simplex_trace(res)))))
+                    )
+            )
                 break
             end
         end
@@ -167,7 +170,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
         matwrite("trace/$(string(model))_$(length(samp))_simplex.mat",
             Dict(
                 "values" => stack(Optim.simplex_value_trace(res)),
-                "points" => stack(stack(unscale(from_internal(Optim.simplex_trace(res)))))
+                "points" => unscale.(from_internal.(stack(stack(Optim.simplex_trace(res)))))
             )
         )
         # DelimitedFiles.writedlm(
