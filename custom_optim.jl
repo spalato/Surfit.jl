@@ -115,8 +115,8 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
             Optim.Options(
                 store_trace=true,
                 trace_simplex=true,
-                outer_f_abstol=f_tol,
-                f_abstol=f_tol,
+                #x_abstol=0, # this is relatively large. Should have a decently sized simplex by then
+                #g_abstol=1E-8,
                 allow_f_increases=false,
 
             );
@@ -125,10 +125,12 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
         new_min = from_internal(Optim.minimizer(res))
         new_val = Optim.minimum(res)
         true_val = ssq(unscale(collect(new_min)))
-        # TODO: simplex_value_trace has shape (n_params+1m n_calls)
-        # TODO: simplex_trace has the shape (n_params, n_params+1, n_calls). It's ok...
-        # TODO: find a way to save the simplex_trace and inspect it.
-        # TODO: How does the size of the simplex relate to the size of the steps from the main loop?
+        # For good convergence, the simplex has to be quite small, too small to be usable.
+        # What we can use instead as a loop criterion is:
+        # TODO: small steps , 0.05, 0.02 in internal units seem good... Simple is good.
+        # TODO: direction change. If we are changing direction in the outer loop, it means we need to refine the surface.
+        # How to iterate? Last simplex is way too small. The pareto simplex (~20% in) seems ok. We need to make sure we have points on both sides of our current minimum along every axis.
+        # Simple way: check if we have at least 1 point on each side of the minimum along every direction. If not, reflect one point.
        #@infiltrate 
 
         print("\rIt: $(length(samp)) surrogate fcalls $(Optim.f_calls(res)) $(round(new_val;digits=6)) $(round(true_val;digits=6)) $(round(current_val;digits=6))          ")
@@ -160,7 +162,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
                 matwrite("trace/$(string(model))_$(length(samp))_simplex.mat",
                     Dict(
                         "values" => stack(Optim.simplex_value_trace(res)),
-                        "points" => unscale.(from_internal.(stack(stack(Optim.simplex_trace(res)))))
+                        "points" => stack(stack(Optim.simplex_trace(res)))
                     )
             )
                 break
@@ -170,7 +172,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
         matwrite("trace/$(string(model))_$(length(samp))_simplex.mat",
             Dict(
                 "values" => stack(Optim.simplex_value_trace(res)),
-                "points" => unscale.(from_internal.(stack(stack(Optim.simplex_trace(res)))))
+                "points" => stack(stack(Optim.simplex_trace(res)))
             )
         )
         # DelimitedFiles.writedlm(
@@ -210,11 +212,13 @@ function main()
     # Initial guesses and bounds
     guess_e1 = [0.5, 1/0.6, 2.5]
     lb_e1 = [0.4, 1/0.7, 2.45]
-    ub_e1 = [0.6, 1/0.1, 2.58]
+    ub_e1 = [0.6, 1/0.2, 2.58]
+    @info "Bounds for e1" lb_e1 ub_e1
 
     guess_g1e1 = [0.25, 1/0.4, 0.25, 1/0.6, 2.5]
     lb_g1e1 = [0.0, 1.5, 0.0, 1/0.7, 2.45]
     ub_g1e1 = [0.6, 10.0, 0.6, 1/0.3, 2.58]
+    @info "bounds for g1e1" lb_g1e1, ub_g1e1
 
     # Benchmarks
     benchs = []
