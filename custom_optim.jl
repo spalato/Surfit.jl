@@ -137,10 +137,10 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
     samp = vcat(scaled_corners, remaining_sample)
     push!(samp, tuple(scale(guess)...))
     samp_val = min_target.(samp)
-
+    reg = 1e-15
     surrogate = RadialBasis(
         samp, samp_val, scale(lb), scale(ub), rad=cubicRadial();
-        regularization=1e-15 # Add small regularization term
+        regularization=reg # Add small regularization term
     )
     #@info "impact of regularization" surrogate(scale(guess)), ssq(guess)
     @assert isapprox(surrogate(scale(guess)), ssq(guess), rtol=1E-6)
@@ -161,7 +161,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
         current_val = samp_val[min_index]
         surrogate = RadialBasis(
             samp, samp_val, scale(lb), scale(ub), rad=cubicRadial();
-            regularization=1e-15 # Add small regularization term
+            regularization=reg # Add small regularization term
         )
         # Step 1: Minimize surrogate using Nelder-Mead
         bounded_surrogate = pi -> surrogate(from_internal(pi))
