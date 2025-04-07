@@ -159,7 +159,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
 
             break
         # If step is small, add the last simplex to the sample
-        elseif max(abs.(new_min .- current_min)...) < 0.02
+        elseif max(abs.(new_min .- current_min)...) < 0#0.02
             @info "Step is small, adding a simplex, $smplx_traj_scale"
             if smplx_traj_scale < 0.99
                 # pick the simplex 20% in
