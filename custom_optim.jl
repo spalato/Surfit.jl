@@ -71,6 +71,9 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
     unscale = unscaled(identity, spans)
     min_target = unscaled(ssq, spans)
 
+    # simplex index scale
+    smplx_traj_scale = 0.25
+
     @assert unscale(scale(guess)) == guess
     print("Initializing")
     # Generate all corners of the hypercube defined by lb and ub
@@ -140,13 +143,6 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
         true_val = ssq(unscale(collect(new_min)))
         push!(samp, tuple(new_min...))
         push!(samp_val, true_val)
-        # For good convergence, the simplex has to be quite small, too small to be usable.
-        # What we can use instead as a loop criterion is:
-        # TODO: small steps , 0.05, 0.02 in internal units seem good... Simple is good.
-        # TODO: direction change. If we are changing direction in the outer loop, it means we need to refine the surface.
-        # How to iterate? Last simplex is way too small. The pareto simplex (~20% in) seems ok. We need to make sure we have points on both sides of our current minimum along every axis.
-        # Simple way: check if we have at least 1 point on each side of the minimum along every direction. If not, reflect one point.
-       #@infiltrate 
 
         print("It: $(length(samp)) surrogate fcalls $(Optim.f_calls(res)) $(round(true_val;digits=6)) $(round(current_val;digits=6)) at $(min_index)\n")
         # Try: if we made a small step, add a small region around it. Like the latest simplex. Or the last centroid and its reflection through the point.
@@ -164,18 +160,22 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
             break
         # If step is small, add the last simplex to the sample
         elseif max(abs.(new_min .- current_min)...) < 0.02
-            @info "Step is small, adding a simplex"
-            # pick the simplex 20% in
-            idx = div(size(Optim.simplex_trace(res))[1], 5)
-            simplex = from_internal.(Optim.simplex_trace(res)[idx])
-            # recenter the simplex around the new minimum
-            simplex = [new_min .+ (s .- new_min) for s in simplex]
-            values = min_target.(simplex)
-            samp = vcat(samp, simplex)
-            samp_val = vcat(samp_val, values)
+            @info "Step is small, adding a simplex, $smplx_traj_scale"
+            if smplx_traj_scale < 0.99
+                # pick the simplex 20% in
+                idx = Int(round(size(Optim.simplex_trace(res))[1] * smplx_traj_scale))
+                smplx_traj_scale = min(smplx_traj_scale+0.25,1)
+                simplex = from_internal.(Optim.simplex_trace(res)[idx])
+                # recenter the simplex around the new minimum
+                simplex = [new_min .+ (s .- new_min) for s in simplex]
+                values = min_target.(simplex)
+                samp = vcat(samp, simplex)
+                samp_val = vcat(samp_val, values)
+            end
         # Step is large, add the new minimum to the sample
         else
             @info "Big step, adding new minimum"
+            smplx_traj_scale = max(smplx_traj_scale-0.25,0.25)
                 # push!(samp, tuple(new_min...))
                 # push!(samp_val, true_val)
         end
