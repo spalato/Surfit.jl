@@ -137,7 +137,6 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
         )
 )
         new_min = from_internal(Optim.minimizer(res))
-        new_val = Optim.minimum(res)
         true_val = ssq(unscale(collect(new_min)))
         push!(samp, tuple(new_min...))
         push!(samp_val, true_val)
@@ -212,7 +211,7 @@ function main()
     @info "Bounds for e1" lb_e1 ub_e1
 
     guess_g1e1 = [0.25, 1/0.4, 0.25, 1/0.6, 2.5]
-    lb_g1e1 = [0.0, 1.5, 0.0, 1/0.7, 2.45]
+    lb_g1e1 = [0.0, 1.5, 0.0, 1/0.8, 2.45]
     ub_g1e1 = [0.6, 10.0, 0.6, 1/0.3, 2.58]
     @info "bounds for g1e1" lb_g1e1, ub_g1e1
 
