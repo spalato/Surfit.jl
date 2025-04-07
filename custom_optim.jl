@@ -134,11 +134,12 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
     push!(samp, tuple(scale(guess)...))
     samp_val = min_target.(samp)
 
-    surrogate = PolynomialChaosSurrogate(
-        samp, samp_val, scale(lb), scale(ub)
+    surrogate = RadialBasis(
+        samp, samp_val, scale(lb), scale(ub), rad=cubicRadial();
+        regularization=1e-15 # Add small regularization term
     )
     #@info "impact of regularization" surrogate(scale(guess)), ssq(guess)
-    #@assert isapprox(surrogate(scale(guess)), ssq(guess), rtol=1E-6)
+    @assert isapprox(surrogate(scale(guess)), ssq(guess), rtol=1E-6)
 
     current_min = scale(guess)
     current_val = surrogate(current_min)
@@ -154,12 +155,9 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
         min_index = argmin(samp_val)
         current_min = collect(samp[min_index])
         current_val = samp_val[min_index]
-        # surrogate = RadialBasis(
-        #     samp, samp_val, scale(lb), scale(ub), rad=cubicRadial();
-        #     regularization=1e-15 # Add small regularization term
-        # )
-        surrogate = PolynomialChaosSurrogate(
-            samp, samp_val, scale(lb), scale(ub);
+        surrogate = RadialBasis(
+            samp, samp_val, scale(lb), scale(ub), rad=cubicRadial();
+            regularization=1e-15 # Add small regularization term
         )
         # Step 1: Minimize surrogate using Nelder-Mead
         bounded_surrogate = pi -> surrogate(from_internal(pi))
@@ -169,19 +167,11 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
             Optim.Options(
                 store_trace=true,
                 trace_simplex=true,
-                #x_abstol=0, # this is relatively large. Should have a decently sized simplex by then
-                #g_abstol=1E-8,
                 allow_f_increases=false,
 
             );
             autodiff = :forward
         )
-        # matwrite("trace/$(string(model))_$(length(samp))_simplex.mat",
-        #     Dict(
-        #         "values" => stack(Optim.simplex_value_trace(res)),
-        #         "points" => stack(stack(Optim.simplex_trace(res)))
-        #     )
-        # )
         new_min = from_internal(Optim.minimizer(res))
         true_val = ssq(unscale(collect(new_min)))
         push!(samp, tuple(new_min...))
