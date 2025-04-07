@@ -61,21 +61,21 @@ function bounded_optim(model, t, y_exp, guess, lb, ub)
     )
 end
 
-function make_surrogate(rad::Surrogates.RadialFunction, samp, samp_val, lb, ub)
-    return RadialBasis(
-        samp, samp_val, lb, ub, rad=rad;
-        regularization=1e-12 # Add small regularization term
-    )
-end
+# function make_surrogate(rad::Surrogates.RadialFunction, samp, samp_val, lb, ub)
+#     return RadialBasis(
+#         samp, samp_val, lb, ub, rad=rad;
+#         regularization=1e-12 # Add small regularization term
+#     )
+# end
 
-function make_surrogate(sur::Kriging, samp, samp_val, lb, ub)
-    return Kriging(
-        samp, samp_val, lb, ub; p=fill(2, length(lb)), 
-    )
-end
+# function make_surrogate(sur::Kriging, samp, samp_val, lb, ub)
+#     return Kriging(
+#         samp, samp_val, lb, ub; p=fill(2, length(lb)), 
+#     )
+# end
 
-function pure_surrogate(model, t, y_exp, guess, lb, ub, rad, optim, f_calls, initsamp=50)
-    @info "Pure surrogate optimization $(model) $(string(rad)) $(string(optim))"
+function pure_surrogate(model, t, y_exp, guess, lb, ub, name, maker, optim, f_calls, initsamp=50)
+    @info "Pure surrogate optimization $(model) $(name) $(string(optim))"
     #@info "model $(model) guess $(guess) lb $(lb) ub $(ub)"
     resid = resid_vs(t, y_exp, model)
     ssq = ssq_of(resid)
@@ -89,10 +89,10 @@ function pure_surrogate(model, t, y_exp, guess, lb, ub, rad, optim, f_calls, ini
     samp = sample(initsamp, scale(lb), scale(ub), SobolSample())
     samp_val = min_target.(samp)
 
-    surrogate = make_surrogate(rad, samp, samp_val, scale(lb), scale(ub))
-    sur_res = surrogate_optimize(min_target, optim, scale(lb), scale(ub), surrogate, SobolSample(), num_new_samples=f_calls)
+    surrogate = maker(samp, samp_val, scale(lb), scale(ub))
+    sur_res = surrogate_optimize(min_target, optim, scale(lb), scale(ub), surrogate, SobolSample(), maxiters=f_calls)
     return (
-        method="Radial Basis $(string(optim))", model=string(model), popt=unscale(collect(sur_res[1])),
+        method="$(name) $(string(optim))", model=string(model), popt=unscale(collect(sur_res[1])),
         vmin=sur_res[2], fcalls=length(samp)
     ), unscale.(samp), samp_val
 end
@@ -100,8 +100,8 @@ end
 
 
 function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=50)
-    @info "Surrogate optimization"
-    @info "model $(model) guess $(guess) lb $(lb) ub $(ub)"
+    @info "Surrogate optimization $(model)"
+    #@info "model $(model) guess $(guess) lb $(lb) ub $(ub)"
     resid = resid_vs(t, y_exp, model)
     ssq = ssq_of(resid)
     @assert all(lb .< guess .< ub)
@@ -248,7 +248,7 @@ function main()
     guess_e1 = [0.5, 1/0.6, 2.5]
     lb_e1 = [0.4, 1/0.7, 2.45]
     ub_e1 = [0.6, 1/0.2, 2.58]
-    @info "Bounds for e1" lb_e1 ub_e1
+    @info "Bounds for e1" lb_e1, ub_e1
 
     guess_g1e1 = [0.25, 1/0.4, 0.25, 1/0.6, 2.5]
     lb_g1e1 = [0.0, 1.5, 0.0, 1/0.8, 2.45]
@@ -271,16 +271,28 @@ function main()
     push!(benchs, bounded_optim(g1e1, t, y_exp, guess_g1e1, lb_g1e1, ub_g1e1))
 
     # Perform optimization using pure surrogate
-    for (sur, minimizer) in [
-        (cubicRadial(), DYCORS()), # Default
-        (cubicRadial(), SRBF()), # Default
-        (Kriging, EI()), # Default
+    make_cubic_radial = (samp, samp_val, lb, ub) -> RadialBasis(samp, samp_val, lb, ub, rad=cubicRadial(); regularization=1e-12)
+    make_kriging = (samp, samp_val, lb, ub) -> Kriging(samp, samp_val, lb, ub; p=fill(2, length(lb)))
+    for (name, sur, minimizer) in [
+        ("Cubic Radial", make_cubic_radial, DYCORS()),
+        ("Cubic Radial", make_cubic_radial, SRBF()), # Better than DYCORS
+        ("Kriging", make_kriging, EI()), # Fails to converge to the correct minimum
+       # ("Kriging", make_kriging, DYCORS()), # works poorly
     ]
-
-        ret = pure_surrogate(e1, t, y_exp, guess_e1, lb_e1, ub_e1, sur, minimizer, 200, 20)
-        push!(benchs, ret[1])
-        ret = pure_surrogate(g1e1, t, y_exp, guess_g1e1, lb_g1e1, ub_g1e1, sur, minimizer, 500)
-        push!(benchs, ret[1])
+        try
+            ret = pure_surrogate(e1, t, y_exp, guess_e1, lb_e1, ub_e1, name, sur, minimizer, 200, 20)
+        catch e
+            @warn "Error in pure surrogate e1: $(e)"
+        else
+            push!(benchs, ret[1])
+        end
+        try
+            ret = pure_surrogate(g1e1, t, y_exp, guess_g1e1, lb_g1e1, ub_g1e1, name, sur, minimizer, 500)
+        catch e
+            @warn "Error in pure surrogate g1e1: $(e)"
+        else
+            push!(benchs, ret[1])
+        end
     end
     # Perform optimization using surrogate
     ret = surrogate_optim(e1, t, y_exp, guess_e1, lb_e1, ub_e1, 1e-9, 1e-12, 200, 20)
