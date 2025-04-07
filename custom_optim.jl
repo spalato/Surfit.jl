@@ -27,6 +27,7 @@ Base.zero(v::Tuple{Float64, Float64}) = (Base.zero(Float64), Base.zero(Float64))
 Base.zero(::NTuple{N, T}) where {N, T} = ntuple(_ -> zero(T), N)
 
 function default_optim(model, t, y_exp, guess)
+    @info "NM optimization $(model)"
     resid = resid_vs(t, y_exp, model)
     ssq = ssq_of(resid)
 
@@ -43,6 +44,7 @@ function default_optim(model, t, y_exp, guess)
 end
 
 function bounded_optim(model, t, y_exp, guess, lb, ub)
+    @info "LBFGS bounded optimization $(model)"
     resid = resid_vs(t, y_exp, model)
     ssq = ssq_of(resid)
 
@@ -58,6 +60,44 @@ function bounded_optim(model, t, y_exp, guess, lb, ub)
         vmin=Optim.minimum(res), fcalls=Optim.f_calls(res)+length(guess)*Optim.g_calls(res)
     )
 end
+
+function make_surrogate(rad::Surrogates.RadialFunction, samp, samp_val, lb, ub)
+    return RadialBasis(
+        samp, samp_val, lb, ub, rad=rad;
+        regularization=1e-12 # Add small regularization term
+    )
+end
+
+function make_surrogate(sur::Kriging, samp, samp_val, lb, ub)
+    return Kriging(
+        samp, samp_val, lb, ub; p=fill(2, length(lb)), 
+    )
+end
+
+function pure_surrogate(model, t, y_exp, guess, lb, ub, rad, optim, f_calls, initsamp=50)
+    @info "Pure surrogate optimization $(model) $(string(rad)) $(string(optim))"
+    #@info "model $(model) guess $(guess) lb $(lb) ub $(ub)"
+    resid = resid_vs(t, y_exp, model)
+    ssq = ssq_of(resid)
+    @assert all(lb .< guess .< ub)
+    @assert length(lb) == length(guess) == length(ub)
+    spans = ub .- lb
+    scale = scaled(identity, spans)
+    unscale = unscaled(identity, spans)
+    min_target = unscaled(ssq, spans)
+
+    samp = sample(initsamp, scale(lb), scale(ub), SobolSample())
+    samp_val = min_target.(samp)
+
+    surrogate = make_surrogate(rad, samp, samp_val, scale(lb), scale(ub))
+    sur_res = surrogate_optimize(min_target, optim, scale(lb), scale(ub), surrogate, SobolSample(), num_new_samples=f_calls)
+    return (
+        method="Radial Basis $(string(optim))", model=string(model), popt=unscale(collect(sur_res[1])),
+        vmin=sur_res[2], fcalls=length(samp)
+    ), unscale.(samp), samp_val
+end
+
+
 
 function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=50)
     @info "Surrogate optimization"
@@ -133,18 +173,18 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
             );
             autodiff = :forward
         )
-        matwrite("trace/$(string(model))_$(length(samp))_simplex.mat",
-        Dict(
-            "values" => stack(Optim.simplex_value_trace(res)),
-            "points" => stack(stack(Optim.simplex_trace(res)))
-        )
-)
+        # matwrite("trace/$(string(model))_$(length(samp))_simplex.mat",
+        #     Dict(
+        #         "values" => stack(Optim.simplex_value_trace(res)),
+        #         "points" => stack(stack(Optim.simplex_trace(res)))
+        #     )
+        # )
         new_min = from_internal(Optim.minimizer(res))
         true_val = ssq(unscale(collect(new_min)))
         push!(samp, tuple(new_min...))
         push!(samp_val, true_val)
 
-        print("It: $(length(samp)) surrogate fcalls $(Optim.f_calls(res)) $(round(true_val;digits=6)) $(round(current_val;digits=6)) at $(min_index)\n")
+        print("\rIt: $(length(samp)) surrogate fcalls $(Optim.f_calls(res)) $(round(true_val;digits=6)) $(round(current_val;digits=6)) at $(min_index)    ")
         # Try: if we made a small step, add a small region around it. Like the latest simplex. Or the last centroid and its reflection through the point.
         if any(new_min .< scale(lb)) || any(new_min .> scale(ub))
             @warn "New minimum is out of bounds!"
@@ -155,12 +195,12 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
             samp = vcat(samp, new_samples)
             samp_val = vcat(samp_val, min_target.(new_samples))
         # are we done?
-        elseif norm(new_min .- current_min) < x_tol && abs(true_val - current_val) < f_tol # TODO: change to `isapprox`
+        elseif (norm(new_min .- current_min) < x_tol) || (abs(true_val - current_val) < f_tol) # TODO: change to `isapprox`
 
             break
         # If step is small, add the last simplex to the sample
-        elseif max(abs.(new_min .- current_min)...) < 0#0.02
-            @info "Step is small, adding a simplex, $smplx_traj_scale"
+        elseif max(abs.(new_min .- current_min)...) < 0.02
+            #@info "Step is small, adding a simplex, $smplx_traj_scale"
             if smplx_traj_scale < 0.99
                 # pick the simplex 20% in
                 idx = Int(round(size(Optim.simplex_trace(res))[1] * smplx_traj_scale))
@@ -174,7 +214,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
             end
         # Step is large, add the new minimum to the sample
         else
-            @info "Big step, adding new minimum"
+            #@info "Big step, adding new minimum"
             smplx_traj_scale = max(smplx_traj_scale-0.25,0.25)
                 # push!(samp, tuple(new_min...))
                 # push!(samp_val, true_val)
@@ -230,10 +270,22 @@ function main()
     push!(benchs, bounded_optim(e1, t, y_exp, guess_e1, lb_e1, ub_e1))
     push!(benchs, bounded_optim(g1e1, t, y_exp, guess_g1e1, lb_g1e1, ub_g1e1))
 
+    # Perform optimization using pure surrogate
+    for (sur, minimizer) in [
+        (cubicRadial(), DYCORS()), # Default
+        (cubicRadial(), SRBF()), # Default
+        (Kriging, EI()), # Default
+    ]
+
+        ret = pure_surrogate(e1, t, y_exp, guess_e1, lb_e1, ub_e1, sur, minimizer, 200, 20)
+        push!(benchs, ret[1])
+        ret = pure_surrogate(g1e1, t, y_exp, guess_g1e1, lb_g1e1, ub_g1e1, sur, minimizer, 500)
+        push!(benchs, ret[1])
+    end
     # Perform optimization using surrogate
-    ret = surrogate_optim(e1, t, y_exp, guess_e1, lb_e1, ub_e1, 1e-6, 1e-6, 200, 20)
+    ret = surrogate_optim(e1, t, y_exp, guess_e1, lb_e1, ub_e1, 1e-9, 1e-12, 200, 20)
     push!(benchs, ret[1])
-    ret = surrogate_optim(g1e1, t, y_exp, guess_g1e1, lb_g1e1, ub_g1e1, 1e-6, 1e-6, 500)
+    ret = surrogate_optim(g1e1, t, y_exp, guess_g1e1, lb_g1e1, ub_g1e1, 1e-9, 1e-12, 500)
     push!(benchs, ret[1])
 
 
