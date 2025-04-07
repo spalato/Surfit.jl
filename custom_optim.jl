@@ -130,6 +130,12 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
             );
             autodiff = :forward
         )
+        matwrite("trace/$(string(model))_$(length(samp))_simplex.mat",
+        Dict(
+            "values" => stack(Optim.simplex_value_trace(res)),
+            "points" => stack(stack(Optim.simplex_trace(res)))
+        )
+)
         new_min = from_internal(Optim.minimizer(res))
         new_val = Optim.minimum(res)
         true_val = ssq(unscale(collect(new_min)))
@@ -155,19 +161,16 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
             samp_val = vcat(samp_val, min_target.(new_samples))
         # are we done?
         elseif norm(new_min .- current_min) < x_tol && abs(true_val - current_val) < f_tol # TODO: change to `isapprox`
-                matwrite("trace/$(string(model))_$(length(samp))_simplex.mat",
-                    Dict(
-                        "values" => stack(Optim.simplex_value_trace(res)),
-                        "points" => stack(stack(Optim.simplex_trace(res)))
-                    )
-            )
+
             break
         # If step is small, add the last simplex to the sample
-        elseif max(abs.(new_min .- current_min)...) < 0.05
+        elseif max(abs.(new_min .- current_min)...) < 0.02
             @info "Step is small, adding a simplex"
             # pick the simplex 20% in
             idx = div(size(Optim.simplex_trace(res))[1], 5)
             simplex = from_internal.(Optim.simplex_trace(res)[idx])
+            # recenter the simplex around the new minimum
+            simplex = [new_min .+ (s .- new_min) for s in simplex]
             values = min_target.(simplex)
             samp = vcat(samp, simplex)
             samp_val = vcat(samp_val, values)
@@ -177,16 +180,6 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
                 # push!(samp, tuple(new_min...))
                 # push!(samp_val, true_val)
         end
-        # Write out the simplex trace.
-        matwrite("trace/$(string(model))_$(length(samp))_simplex.mat",
-            Dict(
-                "values" => stack(Optim.simplex_value_trace(res)),
-                "points" => stack(stack(Optim.simplex_trace(res)))
-            )
-        )
-        # DelimitedFiles.writedlm(
-        #     "trace/$(string(model))_$(length(samp))_val.txt",
-        #     transpose(stack(Optim.simplex_value_trace(res))))
 
     end
     print("  Done\n")
