@@ -113,8 +113,12 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
     min_target = unscaled(ssq, spans)
 
     # simplex index scale
-    smplx_traj_scale = 0.25
+    min_traj_scale = 0.25
+    smplx_traj_scale = min_traj_scale
+    traj_scale_step = 0.25
 
+
+    sampler = SobolSample()
     @assert unscale(scale(guess)) == guess
     print("Initializing")
     # Generate all corners of the hypercube defined by lb and ub
@@ -124,7 +128,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
     # Fill the remaining sample points using sample(...)
     if length(scaled_corners) < initsamp
         # Generate Sobol sample points in the scaled space
-        remaining_sample = sample(initsamp - length(scaled_corners), scale(lb), scale(ub), SobolSample())
+        remaining_sample = sample(initsamp - length(scaled_corners), scale(lb), scale(ub), sampler)
     else
         # If we have enough corners, just use them
         remaining_sample = []
@@ -170,7 +174,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
                 allow_f_increases=false,
 
             );
-            autodiff = :forward
+            #autodiff = :forward
         )
         new_min = from_internal(Optim.minimizer(res))
         true_val = ssq(unscale(collect(new_min)))
@@ -183,21 +187,21 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
             @warn "New minimum is out of bounds!"
             # add sample points using Sobol
             # Generate Sobol sample points in the scaled space
-            new_samples = sample(10, scale(lb), scale(ub), SobolSample())
+            new_samples = sample(10, scale(lb), scale(ub), RandomSample())
             # Add the new samples to the existing sample points
             samp = vcat(samp, new_samples)
             samp_val = vcat(samp_val, min_target.(new_samples))
         # are we done?
-        elseif (norm(new_min .- current_min) < x_tol) || (abs(true_val - current_val) < f_tol) # TODO: change to `isapprox`
+        elseif (norm(new_min .- current_min) < x_tol) && (abs(true_val - current_val) < f_tol) # TODO: change to `isapprox`
 
             break
         # If step is small, add the last simplex to the sample
-        elseif max(abs.(new_min .- current_min)...) < 0.02
+        elseif max(abs.(new_min .- current_min)...) < 0.01
             #@info "Step is small, adding a simplex, $smplx_traj_scale"
             if smplx_traj_scale < 0.99
                 # pick the simplex 20% in
                 idx = Int(round(size(Optim.simplex_trace(res))[1] * smplx_traj_scale))
-                smplx_traj_scale = min(smplx_traj_scale+0.25,1)
+                smplx_traj_scale = min(smplx_traj_scale+traj_scale_step,1)
                 simplex = from_internal.(Optim.simplex_trace(res)[idx])
                 # recenter the simplex around the new minimum
                 simplex = [new_min .+ (s .- new_min) for s in simplex]
@@ -208,7 +212,7 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
         # Step is large, add the new minimum to the sample
         else
             #@info "Big step, adding new minimum"
-            smplx_traj_scale = max(smplx_traj_scale-0.25,0.25)
+            smplx_traj_scale = max(smplx_traj_scale-traj_scale_step, min_traj_scale)
                 # push!(samp, tuple(new_min...))
                 # push!(samp_val, true_val)
         end
@@ -244,7 +248,7 @@ function main()
     @info "Bounds for e1" lb_e1, ub_e1
 
     guess_g1e1 = [0.25, 1/0.4, 0.25, 1/0.6, 2.5]
-    lb_g1e1 = [0.0, 1.5, 0.0, 1/0.8, 2.45]
+    lb_g1e1 = [0.1, 1.5, 0.0, 1/0.8, 2.45]
     ub_g1e1 = [0.6, 10.0, 0.6, 1/0.3, 2.58]
     @info "bounds for g1e1" lb_g1e1, ub_g1e1
 
@@ -288,9 +292,9 @@ function main()
         end
     end
     # Perform optimization using surrogate
-    ret = surrogate_optim(e1, t, y_exp, guess_e1, lb_e1, ub_e1, 1e-9, 1e-12, 200, 45)
+    ret = surrogate_optim(e1, t, y_exp, guess_e1, lb_e1, ub_e1, 1e-9, 1e-12, 200, 50)
     push!(benchs, ret[1])
-    ret = surrogate_optim(g1e1, t, y_exp, guess_g1e1, lb_g1e1, ub_g1e1, 1e-9, 1e-12, 500, 70)
+    ret = surrogate_optim(g1e1, t, y_exp, guess_g1e1, lb_g1e1, ub_g1e1, 1e-9, 1e-12, 200, 100)
     push!(benchs, ret[1])
 
 
