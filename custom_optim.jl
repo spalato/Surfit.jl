@@ -11,6 +11,7 @@ using DataFrames
 using CSV
 using LinearAlgebra # Added to define `norm`
 using MAT
+using SurrogatesPolyChaos
 #using Radials: RadialBasis, thinplateRadial # Import updated RadialBasis
 
 plotlyjs(size=(800, 600))
@@ -133,12 +134,11 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
     push!(samp, tuple(scale(guess)...))
     samp_val = min_target.(samp)
 
-    surrogate = RadialBasis(
-        samp, samp_val, scale(lb), scale(ub), rad=cubicRadial();
-        regularization=1e-12 # Add small regularization term
+    surrogate = PolynomialChaosSurrogate(
+        samp, samp_val, scale(lb), scale(ub)
     )
     #@info "impact of regularization" surrogate(scale(guess)), ssq(guess)
-    @assert isapprox(surrogate(scale(guess)), ssq(guess), rtol=1E-6)
+    #@assert isapprox(surrogate(scale(guess)), ssq(guess), rtol=1E-6)
 
     current_min = scale(guess)
     current_val = surrogate(current_min)
@@ -154,9 +154,12 @@ function surrogate_optim(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, 
         min_index = argmin(samp_val)
         current_min = collect(samp[min_index])
         current_val = samp_val[min_index]
-        surrogate = RadialBasis(
-            samp, samp_val, scale(lb), scale(ub), rad=cubicRadial();
-            regularization=1e-15 # Add small regularization term
+        # surrogate = RadialBasis(
+        #     samp, samp_val, scale(lb), scale(ub), rad=cubicRadial();
+        #     regularization=1e-15 # Add small regularization term
+        # )
+        surrogate = PolynomialChaosSurrogate(
+            samp, samp_val, scale(lb), scale(ub);
         )
         # Step 1: Minimize surrogate using Nelder-Mead
         bounded_surrogate = pi -> surrogate(from_internal(pi))
@@ -295,9 +298,9 @@ function main()
         end
     end
     # Perform optimization using surrogate
-    ret = surrogate_optim(e1, t, y_exp, guess_e1, lb_e1, ub_e1, 1e-9, 1e-12, 200, 20)
+    ret = surrogate_optim(e1, t, y_exp, guess_e1, lb_e1, ub_e1, 1e-9, 1e-12, 200, 45)
     push!(benchs, ret[1])
-    ret = surrogate_optim(g1e1, t, y_exp, guess_g1e1, lb_g1e1, ub_g1e1, 1e-9, 1e-12, 500)
+    ret = surrogate_optim(g1e1, t, y_exp, guess_g1e1, lb_g1e1, ub_g1e1, 1e-9, 1e-12, 500, 70)
     push!(benchs, ret[1])
 
 
