@@ -11,7 +11,6 @@ using DataFrames
 using CSV
 using LinearAlgebra # Added to define `norm`
 using MAT
-using SurrogatesPolyChaos
 #using Radials: RadialBasis, thinplateRadial # Import updated RadialBasis
 
 plotlyjs(size=(800, 600))
