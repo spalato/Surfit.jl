@@ -1,7 +1,9 @@
 using Test
+using TestItems
 using Surrogates
 using LinearAlgebra
-include("../src/optimisation.jl")
+#include("../src/optimisation.jl")
+using Surfit
 
 @testitem "surrogatefit basic tests" begin
     model(t, a, b) = a * exp.(-b * t) # Example model

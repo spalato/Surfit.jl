@@ -1,4 +1,4 @@
-module surfit
+module Surfit
 
 include("optimisation.jl")
 
