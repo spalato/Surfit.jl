@@ -25,3 +25,7 @@ using Surfit
     @test length(samples) > initsamp
     @test length(values) == length(samples)
 end
+
+@testitem "Datastore tests" begin
+    include("./tests_datastore.jl")
+end
