@@ -4,7 +4,10 @@ using Optim
 using LinearAlgebra # Added to define `norm`
 using Infiltrator
 
+# this one won't work with the store: it stores x, p0, p1, p2...
 resid_vs(x, y, model) = p -> y .- model.(x, p...) # returns f(p::Array)::Array
+
+resid_vs(y, model) = p -> y .- model(p...)
 ssq_of(resid) = p -> sum(resid(p).^2) # returns f(p::Array)::float
 scaled(f, scales) = p -> f(p./scales)
 unscaled(f, scales) = p -> f(p.*scales)
@@ -12,6 +15,8 @@ unscaled(f, scales) = p -> f(p.*scales)
 Base.zero(v::Tuple{Float64, Float64}) = (Base.zero(Float64), Base.zero(Float64))
 Base.zero(::NTuple{N, T}) where {N, T} = ntuple(_ -> zero(T), N)
 
+# TODO: change how we handle initialization.
+# Currently: generate corners, fill up to initsamp
 function surrogatefit(ssq, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=50)
     #@info "Surrogate optimization $(model)"
     #@info "model $(model) guess $(guess) lb $(lb) ub $(ub)"
@@ -47,7 +52,7 @@ function surrogatefit(ssq, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=50)
 
     reg = 1e-15 # regularization term for the radial basis function
 
-    sampler = SobolSample() # sampler for initial points
+    sampler = SobolSample() # sampler for initial points # I just checked and: it returns always the same thing!
 
     print("Initializing")
     # Generate all corners of the hypercube defined by lb and ub
@@ -89,7 +94,7 @@ function surrogatefit(ssq, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=50)
             );
         )
         new_min = from_internal(Optim.minimizer(res))
-        true_val = ssq(unscale(collect(new_min)))
+        true_val = min_target(collect(new_min))
         push!(sample_points, tuple(new_min...))
         push!(samp_val, true_val)
         # TODO: check if we can reuse the last simplex as an input to our new one.
@@ -107,7 +112,7 @@ function surrogatefit(ssq, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=50)
             sample_points = vcat(sample_points, new_samples)
             samp_val = vcat(samp_val, min_target.(new_samples))
         # Are we done?
-        elseif (norm(new_min .- current_min) < x_tol) && (abs(true_val - current_val) < f_tol) # TODO: change to `isapprox`
+        elseif (norm(unscale(new_min) .- unscale(current_min)) < x_tol) && (abs(true_val - current_val) < f_tol) # TODO: change to `isapprox`
             break
         # If step is small, add a simplex to the sample.
         # "small" is defined here as less than 1% of the distance between the bounds.
