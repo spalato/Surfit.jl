@@ -1,4 +1,4 @@
-using Surfit: hash_call, stored, store!, get_result
+using Surfit: hash_call, stored, store!, get_result, get_param
 using HDF5
 
 cases = [
@@ -15,7 +15,8 @@ for (name, params, value) in cases
     @test hash_call(params) == value
 end
 
-# Define test functions with counters
+# Define test functions with counters. This is dirty AI Slop.
+# Better implementations: https://discourse.julialang.org/t/macro-for-counting-the-number-of-times-a-function-is-called/3129
 f1_counter = Ref(0)
 f2_counter = Ref(0)
 f3_counter = Ref(0)
@@ -40,46 +41,29 @@ end
     temp_h5_file = tempname() * ".h5"
     h5file = h5open(temp_h5_file, "w")
 
+    cases = Dict(
+        f1 => (f1_counter, [(1,2),(1.0, 2.0)]),  # mixed types crash the thing. We will be using float arrays anyway.
+        f2 => (f2_counter, [(2.0,3.0,4.0),]),
+        f3 => (f3_counter, [(5.0,),]),
+    )
     try
-        # Create groups for each function
-        group_f1 = create_group(h5file, "f1")
-        group_f2 = create_group(h5file, "f2")
-        group_f3 = create_group(h5file, "f3")
+        for (f, (counter, params)) in cases
+            # create a group to store the results.
+            group = create_group(h5file, string(f))
+            stored_f = stored(f, group)
+            for p in params
+                # Test cases
+                r = f(p...)
+                @test stored_f(p...) == r
+                @test haskey(group, hash_call(p))  # Ensure result is cached
+                @test get_result(group, hash_call(p)) == r
+                @test get_param(group, hash_call(p)) == p
 
-        # Wrap functions with `stored`
-        stored_f1 = stored(f1, group_f1)
-        stored_f2 = stored(f2, group_f2)
-        stored_f3 = stored(f3, group_f3)
-
-        # Test cases
-        @test stored_f1(1, 2) == f1(1, 2)
-        @test haskey(group_f1, hash_call((1, 2)))  # Ensure result is cached
-        @test get_result(group_f1, hash_call((1, 2))) == f1(1, 2)
-
-        @test stored_f2(2, 3, 4) == f2(2, 3, 4)
-        @test haskey(group_f2, hash_call((2, 3, 4)))  # Ensure result is cached
-        @test get_result(group_f2, hash_call((2, 3, 4))) == f2(2, 3, 4)
-
-        @test stored_f3(5) == f3(5)
-        @test haskey(group_f3, hash_call((5,)))  # Ensure result is cached
-        @test get_result(group_f3, hash_call((5,))) == f3(5)
-
-        # Ensure second calls retrieve stored values and do not recompute
-        f1_val = f1(1, 2)
-        f2_val = f2(2, 3, 4)
-        f3_val = f3(5)
-        f1_counter[] = 0
-        f2_counter[] = 0
-        f3_counter[] = 0
-
-        @test stored_f1(1, 2) == f1_val
-        @test f1_counter[] == 0  # Ensure no recomputation
-
-        @test stored_f2(2, 3, 4) == f2_val
-        @test f2_counter[] == 0  # Ensure no recomputation
-
-        @test stored_f3(5) == f3_val
-        @test f3_counter[] == 0  # Ensure no recomputation
+                counter[] = 0
+                @test stored_f(p...) == r
+                @test counter[] == 0  # Ensure no recomputation
+            end
+        end
     finally
         close(h5file)
         rm(temp_h5_file, force=true)

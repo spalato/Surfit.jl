@@ -31,7 +31,7 @@ function store!(ds::HDF5.H5DataStore, key::AbstractString, parameters::NTuple{N,
     group = create_group(ds, key)
     try
         group["result"] = result
-        group["param"] = collect(parameters)
+        group["param"] = collect(parameters) # we will run into issues with mixed integer and floats
     catch e
         # something failed. We delete the group
         delete_object(group)
