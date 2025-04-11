@@ -15,25 +15,18 @@ for (name, params, value) in cases
     @test hash_call(params) == value
 end
 
-# Define test functions with counters. This is dirty AI Slop.
-# Better implementations: https://discourse.julialang.org/t/macro-for-counting-the-number-of-times-a-function-is-called/3129
-f1_counter = Ref(0)
-f2_counter = Ref(0)
-f3_counter = Ref(0)
 
-f1(x, y) = begin
-    f1_counter[] += 1
-    x + y
+mutable struct Counting{TF}
+    f::TF
+    counter::Int
 end
 
-f2(x, y, z) = begin
-    f2_counter[] += 1
-    x * y * z
-end
+Counting(f) = Counting(f, 0)
+reset!(c::Counting) = c.counter = 0
 
-f3(x) = begin
-    f3_counter[] += 1
-    x^2
+function (c::Counting)(args...)
+    c.counter += 1
+    c.f(args...)
 end
 
 @testset "stored function tests" begin
@@ -42,15 +35,16 @@ end
     h5file = h5open(temp_h5_file, "w")
 
     cases = Dict(
-        f1 => (f1_counter, [(1,2),(1.0, 2.0)]),  # mixed types crash the thing. We will be using float arrays anyway.
-        f2 => (f2_counter, [(2.0,3.0,4.0),]),
-        f3 => (f3_counter, [(5.0,),]),
+        f1 => [(1,2),(1.0, 2.0)],  # mixed types crash the thing. We will be using float arrays anyway.
+        f2 => [(2.0,3.0,4.0),],
+        f3 => [(5.0,),],
     )
     try
-        for (f, (counter, params)) in cases
+        for (f, params) in cases
             # create a group to store the results.
+            counted_f = Counting(f)
             group = create_group(h5file, string(f))
-            stored_f = stored(f, group)
+            stored_f = stored(counted_f, group)
             for p in params
                 # Test cases
                 r = f(p...)
@@ -59,9 +53,10 @@ end
                 @test get_result(group, hash_call(p)) == r
                 @test get_param(group, hash_call(p)) == p
 
-                counter[] = 0
+                
+                count = counted_f.counter  # Ensure our counter was reset.
                 @test stored_f(p...) == r
-                @test counter[] == 0  # Ensure no recomputation
+                @test counted_f.counter == count  # Ensure no recomputation
             end
         end
     finally
