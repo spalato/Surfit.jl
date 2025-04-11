@@ -12,13 +12,13 @@ unscaled(f, scales) = p -> f(p.*scales)
 Base.zero(v::Tuple{Float64, Float64}) = (Base.zero(Float64), Base.zero(Float64))
 Base.zero(::NTuple{N, T}) where {N, T} = ntuple(_ -> zero(T), N)
 
-function surrogatefit(model, t, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=50)
+function surrogatefit(ssq, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=50)
     #@info "Surrogate optimization $(model)"
     #@info "model $(model) guess $(guess) lb $(lb) ub $(ub)"
 
     # create helper functions: residuals and sum of squares
-    resid = resid_vs(t, y_exp, model)
-    ssq = ssq_of(resid)
+    #resid = resid_vs(t, y_exp, model)
+    #ssq = ssq_of(resid)
 
     # setup scaled coordinates
     @assert all(lb .< guess .< ub) # check that guess is within bounds
