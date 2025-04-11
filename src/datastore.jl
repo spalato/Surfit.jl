@@ -9,19 +9,15 @@ using HDF5
 
 The hash uses CRC32c, and should remain constant accross versions.
 """
-function hash_call(name, p)
-    # hash the name string
-    hash = crc32c(name)
+function hash_call(p)
+    # hash the name strin
     # take!(io) returns a Vector{UInt8} of the bytes in `p`
     io = IOBuffer()
     write(io, Ref(p))
     # hash the content with the name
-    "0x$(string(crc32c(take!(io), hash), base=16))"
+    "0x$(string(crc32c(take!(io)), base=16))"
 end
 
-# TODO: remove the function string
-# hashing the function is actually not necessary....
-hash_call(f::Function, p) = hash_call(String(Symbol(f)), p)
 
 # store the return array into "result", parameters into "param"
 # We could be more flexible by storing results, parameters, and independant
@@ -31,7 +27,7 @@ hash_call(f::Function, p) = hash_call(String(Symbol(f)), p)
 get_result(ds::HDF5.H5DataStore, key) = read(ds[key], "result")
 get_param(ds::HDF5.H5DataStore, key) = Tuple(read(ds[key], "param"))
 
-function store!(ds::HDF5.H5DataStore, key::AbstractString, parameters::NTuple{N, AbstractFloat}, result::AbstractArray) where {N}
+function store!(ds::HDF5.H5DataStore, key::AbstractString, parameters::NTuple{N, Any}, result) where {N}
     group = create_group(ds, key)
     try
         group["result"] = result
@@ -50,7 +46,7 @@ end
 function stored(f, store::HDF5.H5DataStore)
     (p...) -> begin
         # compute hash
-        key = hash_call(f, p)
+        key = hash_call(p)
         # check if hash is in store
         if haskey(store, key)
             # if so, return cached result
