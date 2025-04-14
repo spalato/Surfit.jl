@@ -50,9 +50,9 @@ function surfit_scalar(ssq, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=50)
     # to take and how this changes with iteration number.
     # Basic testing shows it doesn't make a big difference. No simplex looses 
     # a bit of accurracy.
-    min_traj_scale = 0.2
+    min_traj_scale = 0.5
     smplx_traj_scale = min_traj_scale
-    traj_scale_step = 0.4
+    traj_scale_step = 0.5
 
     reg = 1e-15 # regularization term for the radial basis function
 
@@ -178,9 +178,9 @@ function surfit(model, x, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, initsamp)
     # trace of the inner loop and recentering it around the new minimum. We take
     # smaller and smaller simplexes. The following parameters define which simplex
     # to take and how this changes with iteration number.
-    min_traj_scale = 0.2
+    min_traj_scale = 0.5
     smplx_traj_scale = min_traj_scale
-    traj_scale_step = 0.4
+    traj_scale_step = 0.5
 
     reg = 1e-15 # regularization term for the radial basis function
     sampler = SobolSample() # sampler for initial points # I just checked and: it returns always the same thing!
