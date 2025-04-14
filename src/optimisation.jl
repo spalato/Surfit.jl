@@ -171,7 +171,16 @@ function surfit(model, x, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, initsamp)
     to_internal(p) = asin.(2*(p .- scale(lb)) ./ (scale(ub) .- scale(lb)) .- 1)
     from_internal(p) = scale(lb) .+ (scale(ub) .- scale(lb)) .* (0.5*(sin.(p) .+ 1)) # p_internal to p_bounded
 
-    reg = 1e-32 # regularization term for the radial basis function
+    # To help explore around the minimum, we sometimes want to add a small
+    # region around the new minimum. This is done by picking a simplex from the
+    # trace of the inner loop and recentering it around the new minimum. We take
+    # smaller and smaller simplexes. The following parameters define which simplex
+    # to take and how this changes with iteration number.
+    min_traj_scale = 0.25
+    smplx_traj_scale = min_traj_scale
+    traj_scale_step = 0.25
+
+    reg = 1e-15 # regularization term for the radial basis function
     sampler = SobolSample() # sampler for initial points # I just checked and: it returns always the same thing!
 
     
@@ -231,12 +240,30 @@ function surfit(model, x, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, initsamp)
         # output logging. Dirty.
         print("\rIt: $(length(sample_points)) surrogate fcalls $(Optim.f_calls(res)) $(round(new_ssq;digits=6)) $(round(current_ssq;digits=6)) at $(min_index)    ")
         
-
         # are we done?
         if (norm(unscale(new_min) .- unscale(current_min)) < x_tol) && (abs(new_ssq - current_ssq) < f_tol) # TODO: change to `isapprox`
             break
-        else # there will be other conditions: out of bounds, small step
-            nothing
+        # If step is small, add a simplex to the sample.
+        # "small" is defined here as less than 1% of the distance between the bounds.
+        elseif max(abs.(new_min .- current_min)...) < 0.01
+            if smplx_traj_scale < 0.99
+                # pick the simplex some fraction of the trace in.
+                idx = Int(round(size(Optim.simplex_trace(res))[1] * smplx_traj_scale))
+                simplex = from_internal.(Optim.simplex_trace(res)[idx])
+                # recenter the simplex around the new minimumm add to the sample
+                simplex = [new_min .+ (s .- new_min) for s in simplex]
+                y_true = map(p -> model(x, unscale(p)...), simplex)
+                new_ssq = map(y -> ssq_arr(y_exp, y), y_true)
+                sample_points = vcat(sample_points, simplex)
+                samp_y = vcat(samp_y, y_true)
+                samp_ssq = vcat(samp_ssq, new_ssq)
+                
+
+                # Pick the simplex later on next iteration.
+                smplx_traj_scale = min(smplx_traj_scale+traj_scale_step,1)
+            end
+        else
+            smplx_traj_scale = max(smplx_traj_scale-traj_scale_step, min_traj_scale)
         end
         min_index = argmin(samp_ssq)
         current_min = collect(sample_points[min_index])
