@@ -11,6 +11,8 @@ resid_vs(y, model) = p -> y .- model(p...)
 ssq_of(resid) = p -> sum(resid(p).^2) # returns f(p::Array)::float
 scaled(f, scales) = p -> f(p./scales)
 unscaled(f, scales) = p -> f(p.*scales)
+resid_arr(y_exp::AbstractArray, y::AbstractArray) = y_exp .- y
+ssq_arr(y_exp::AbstractArray, y::AbstractArray) = sum(resid_arr(y_exp, y).^2)
 
 Base.zero(v::Tuple{Float64, Float64}) = (Base.zero(Float64), Base.zero(Float64))
 Base.zero(::NTuple{N, T}) where {N, T} = ntuple(_ -> zero(T), N)
