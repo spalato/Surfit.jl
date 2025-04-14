@@ -3,6 +3,6 @@ module Surfit
 include("optimisation.jl")
 include("datastore.jl")
 
-export surrogatefit, stored, ssq_of, resid_vs
+export surfit_scalar, stored_scalar, ssq_of, resid_vs
 
 end # module surfit

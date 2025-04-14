@@ -1,5 +1,6 @@
-using Surfit: hash_call, stored, store!, get_result, get_param
+using Surfit: hash_call, stored, stored_scalar, store!, get_result, get_param, get_indep
 using HDF5
+using Infiltrator
 
 cases = [
     ("f1", (1, 2, 3), "0x404c404"),
@@ -30,12 +31,19 @@ function (c::Counting)(args...)
     c.f(args...)
 end
 
+
+function (c::Counting)(x::AbstractArray, args...)
+    c.counter += 1
+    c.f.(x, args...)
+end
+
+
 # Define test functions
 f1(x, y) = x + y
 f2(x, y, z) = x * y * z
 f3(x) = x^2
 
-@testset "stored function tests" begin
+@testset "stored scalar function tests" begin
     # Create a temporary HDF5 file
     temp_h5_file = tempname() * ".h5"
     h5file = h5open(temp_h5_file, "w")
@@ -50,7 +58,7 @@ f3(x) = x^2
             # create a group to store the results.
             counted_f = Counting(f)
             group = create_group(h5file, string(f))
-            stored_f = stored(counted_f, group)
+            stored_f = stored_scalar(counted_f, group)
             for p in params
                 # Test cases
                 r = f(p...)
@@ -68,4 +76,44 @@ f3(x) = x^2
         close(h5file)
         rm(temp_h5_file, force=true)
     end
+end
+
+@testset "Stored vector function tests" begin
+    # Create a temporary HDF5 file
+    temp_h5_file = tempname() * ".h5"
+    h5file = h5open(temp_h5_file, "w")
+
+    model(x, a, k) = a*exp(-k*x)
+    
+    x = collect(0:0.1:10)
+    p = (1.0, 1.0)
+    try
+        counted_f = Counting(model)
+        group = create_group(h5file, string("model"))
+        @assert length(group) == 0
+        stored_f = stored(counted_f, group)
+        r = model.(x, p...)
+        k = hash_call(p)
+        @test stored_f(x, p...) == r
+        @test haskey(group, k)
+        @test length(group) == 1
+        @test get_result(group, k) == r
+        @test get_param(group, k) == p
+        @test get_indep(group, k) == x
+        count = counted_f.counter
+        @test stored_f(x, p...) == r
+        @test counted_f.counter == count  # Ensure no recomputation
+
+        for newx in [
+            x*0.5,
+            collect(0:0.2:10),
+        ]
+            @assert !(newx == x)
+            @test_throws ArgumentError stored_f(newx, p...)
+        end
+    finally
+        close(h5file)
+        rm(temp_h5_file, force=true)
+    end
+        
 end

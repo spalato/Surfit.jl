@@ -25,10 +25,10 @@ function opt_with_store()
     # initialize datastore
     popt, pval, sampl, sampl_val = h5open("Zsac_e1.store.h5", "w") do store
         prediction(a0, k0, along) = e1.(t, a0, k0, along)
-        e1_s = stored(prediction, store)
+        e1_s = stored_scalar(prediction, store)
         resid = resid_vs(y_exp, e1_s)
         ssq = ssq_of(resid)
-        popt, pval, sampl, sampl_val = surrogatefit(ssq, guess_e1, lb_e1, ub_e1, 1E-3, 1E-6, 200)
+        popt, pval, sampl, sampl_val = surfit_scalar(ssq, guess_e1, lb_e1, ub_e1, 1E-3, 1E-6, 200)
         @info "Lengths:" length(sampl) length(store)
         popt, pval, sampl, sampl_val
     end

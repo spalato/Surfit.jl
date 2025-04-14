@@ -17,7 +17,7 @@ Base.zero(::NTuple{N, T}) where {N, T} = ntuple(_ -> zero(T), N)
 
 # TODO: change how we handle initialization.
 # Currently: generate corners, fill up to initsamp
-function surrogatefit(ssq, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=50)
+function surfit_scalar(ssq, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=50)
     #@info "Surrogate optimization $(model)"
     #@info "model $(model) guess $(guess) lb $(lb) ub $(ub)"
 
