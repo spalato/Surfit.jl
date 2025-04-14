@@ -6,17 +6,20 @@
 using DelimitedFiles
 using Surrogates
 using Optim
-using Plots
+#using Plots
 using DataFrames
 using CSV
 using LinearAlgebra # Added to define `norm`
 using MAT
+using Surfit
 #using Radials: RadialBasis, thinplateRadial # Import updated RadialBasis
 
-plotlyjs(size=(800, 600))
+#plotlyjs(size=(800, 600))
 
 e1(t, a0, k0, along) = a0*exp(-k0*t) + along
-g1e1(t, a0, k0, a1, k1, along) = a0*exp(-0.5*(k0*t)^2) + a1*exp(-k1*t) + along 
+e1_v(t, a0, k0, along) = a0.*exp.(-k0.*t) .+ along
+g1e1(t, a0, k0, a1, k1, along) = a0*exp(-0.5*(k0*t)^2) + a1*exp(-k1*t) + along
+g1e1_v(t, a0, k0, a1, k1, along) = a0.*exp.(-0.5*(k0.*t).^2) + a1.*exp.(-k1.*t) .+ along
 
 resid_vs(x, y, model) = p -> y .- model.(x, p...) # returns f(p::Array)::Array
 ssq_of(resid) = p -> sum(resid(p).^2) # returns f(p::Array)::float
@@ -232,7 +235,7 @@ function main()
     # load data
     @info "Loading data"
     fname = "data/Zsac_FLUPS_spectra_params.txt"
-    data = readdlm(fname; comments=true)
+    data = readdlm(joinpath(dirname(@__FILE__),fname); comments=true)
     t = data[:,1]
     y_exp = data[:,3]
     # keep only between 0 and 2
@@ -291,15 +294,46 @@ function main()
         end
     end
     # Perform optimization using surrogate
-    ret = surrogate_optim(e1, t, y_exp, guess_e1, lb_e1, ub_e1, 1e-9, 1e-12, 200, 50)
-    push!(benchs, ret[1])
-    ret = surrogate_optim(g1e1, t, y_exp, guess_g1e1, lb_g1e1, ub_g1e1, 1e-9, 1e-12, 200, 100)
-    push!(benchs, ret[1])
-
-
+    # fitting target is scalar
+    resid_e1 = resid_vs(t, y_exp, e1)
+    min_target_e1 = ssq_of(resid_e1)
+    ret = surfit_scalar(min_target_e1, guess_e1, lb_e1, ub_e1, 1e-9, 1e-12, 200, 50)
+    push!(
+        benchs,
+        (
+            method="Surfit scalar", model=string(e1), popt=ret[1], vmin=ret[2],
+            fcalls=length(ret[3])
+        )
+    )
+    resid_g1e1 = resid_vs(t, y_exp, g1e1)
+    min_target_g1e1 = ssq_of(resid_g1e1)
+    ret = surfit_scalar(min_target_g1e1, guess_g1e1, lb_g1e1, ub_g1e1, 1e-9, 1e-12, 200, 100)
+    push!(
+        benchs,
+        (
+            method="Surfit scalar", model=string(g1e1), popt=ret[1], vmin=ret[2],
+            fcalls=length(ret[3])
+        )
+    )
+    ret = surfit(e1_v, t, y_exp,  guess_e1, lb_e1, ub_e1, 1e-9, 1e-12, 200, 50)
+    push!(
+        benchs,
+        (
+            method="Surfit", model=string(e1), popt=ret[1], vmin=ret[2],
+            fcalls=length(ret[3])
+        )
+    )
+    ret = surfit(g1e1_v, t, y_exp,  guess_g1e1, lb_g1e1, ub_g1e1, 1e-9, 1e-12, 200, 100)
+    push!(
+        benchs,
+        (
+            method="Surfit", model=string(g1e1), popt=ret[1], vmin=ret[2],
+            fcalls=length(ret[3])
+        )
+    )
     # Convert results to DataFrame
     df = DataFrame(benchs)
     # Save results to CSV file
-    CSV.write("results/optim_results.csv", df)
+    CSV.write(joinpath(dirname(@__FILE__),"results/optim_results.csv"), df)
     df
 end
