@@ -28,6 +28,11 @@ using Surfit: surfit_scalar, residual_vs
     @test length(values) == length(samples)
 end
 
+
+@testitem "Optimization Smoke testing." begin
+    include("./test_optimisation.jl")
+end
+
 @testitem "Datastore tests" begin
     include("./tests_datastore.jl")
 end
