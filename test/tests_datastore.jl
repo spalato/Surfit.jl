@@ -99,6 +99,8 @@ end
         @test length(group) == 1
         @test get_result(group, k) == r
         @test get_param(group, k) == p
+        indep = get_indep(group, k)
+        @test length(indep) == length(x)
         @test get_indep(group, k) == x
         count = counted_f.counter
         @test stored_f(x, p...) == r
@@ -110,6 +112,7 @@ end
         ]
             @assert !(newx == x)
             @test_throws ArgumentError stored_f(newx, p...)
+            #@test stored_f(newx, p...)
         end
     finally
         close(h5file)

@@ -84,12 +84,16 @@ function stored(f, store::HDF5.H5DataStore)
             # if so, return cached result
             @debug "Loading $(key)"
             stored_x = get_indep(store, key)
-            (size(stored_x) == size(x) &&(stored_x ≈ x)) || throw(ArgumentError("Stored independents are different."))
+            (size(stored_x) == size(x)) || throw(ArgumentError("Independents have different sizes."))
+            if !(stored_x ≈ x)
+                throw(ArgumentError("Stored independents are different.: $(maximum(abs.(stored_x .- x)))"))
+            end
             return get_result(store, key)
         else
             # if not, calculate f(p), store result then return it.
-            res = f.(x, p...)
+            res = f(x, p...)
             @debug "Storing $(key)"
+            #@info "Length x $(length(x)) $p"
             store!(store, key, p, x, res)
             return res
         end

@@ -4,8 +4,8 @@ using Optim
 using LinearAlgebra # Added to define `norm`
 using Infiltrator
 
-# this one won't work with the store: it stores x, p0, p1, p2...
-resid_vs(x, y, model) = p -> y .- model.(x, p...) # returns f(p::Array)::Array
+# This works, if model(x, p...) is vectorized
+resid_vs(x, y, model) = p -> y .- model(x, p...) # returns f(p::Array)::Array
 
 resid_vs(y, model) = p -> y .- model(p...)
 ssq_of(resid) = p -> sum(resid(p).^2) # returns f(p::Array)::float
@@ -154,7 +154,7 @@ end
 
 ## TODO: tidy up and remove duplication between surfit and surfit_scalar
 
-function surfit(model, x, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, initsamp)
+function surfit(model, x, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=25)
     # setup scaled coordinates
     @assert all(lb .< guess .< ub) # check that guess is within bounds
     @assert all(lb .< ub) # check that bounds are valid
