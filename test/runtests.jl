@@ -36,3 +36,7 @@ end
 @testitem "Datastore tests" begin
     include("./tests_datastore.jl")
 end
+
+@testitem "Integration tests for stored and surfit" begin
+    include("./tests_stored_surfit.jl")
+end
