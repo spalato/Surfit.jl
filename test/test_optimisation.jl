@@ -1,4 +1,5 @@
 using Test
+using Surrogates: sample, SobolSample
 #using Random
 
 # Import the functions to be tested
@@ -87,6 +88,26 @@ end
     f_tol = 1e-6
     f_calls = 100
     result, value, sample_points, samp_y = surfit(mock_model, x, y_exp, guess, lb, ub, x_tol, f_tol, f_calls)
+    @test isapprox(result, [2.0, 1.0], atol=1e-2)
+    @test isapprox(value, 0.0, atol=1e-2)
+end
+
+@testset "surfit tests array init" begin
+    x = [1.0, 2.0, 3.0]
+    y_exp = [3.0, 5.0, 7.0]
+    guess = [1.0, 1.0]
+    lb = [0.0, 0.0]
+    ub = [5.0, 5.0]
+    x_tol = 1e-6
+    f_tol = 1e-6
+    f_calls = 100
+    corners = vec(collect(Iterators.product(zip(lb, ub)...)))
+    sample_points = [tuple(collect(corner)...) for corner in corners]
+    extra = sample(20, lb, ub, SobolSample())
+    for p in extra
+        push!(sample_points, p)
+    end
+    result, value, sample_points, samp_y = surfit(mock_model, x, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, sample_points)
     @test isapprox(result, [2.0, 1.0], atol=1e-2)
     @test isapprox(value, 0.0, atol=1e-2)
 end

@@ -17,6 +17,45 @@ ssq_arr(y_exp::AbstractArray, y::AbstractArray) = sum(resid_arr(y_exp, y).^2)
 Base.zero(v::Tuple{Float64, Float64}) = (Base.zero(Float64), Base.zero(Float64))
 Base.zero(::NTuple{N, T}) where {N, T} = ntuple(_ -> zero(T), N)
 
+"""
+    init_sample(lb, ub, initsamp)
+
+Generate initial `sample_points` between bounds `lb` and `ub`.
+
+If initsamp is an integer, the sample will at least that number of points.
+First, the corners of the box defined by `lb` and `ub` are added. Then,
+the box is populated by Sobol sampling. The points are returned scaled by the 
+length defined by lb, ub.
+
+If initisamp is an array, will return the sample points, ensure the corners are
+contained.
+"""
+function init_sample(lb, ub, initsamp::Integer)
+    sampler = SobolSample()
+    # Generate all corners of the hypercube defined by lb and ub
+    corners = vec(collect(Iterators.product(zip(lb, ub)...)))
+    sample_points = [tuple(collect(corner)...) for corner in corners] # TODO: convert to vector of tuples
+    # Fill the remaining sample points using sample(...)
+    if length(sample_points) < initsamp
+        # Generate Sobol sample points in the scaled space
+        remaining_sample = sample(initsamp - length(sample_points), lb, ub, sampler)
+        for s in remaining_sample
+            push!(sample_points, s)
+        end
+    end
+    sample_points
+end
+
+function init_sample(lb, ub, initsamp::AbstractArray)
+    corners = vec(collect(Iterators.product(zip(lb, ub)...)))
+    for c in corners
+        if !(c in initsamp)
+            push!(initsamp, c)
+        end
+    end
+    return initsamp
+end
+
 # TODO: change how we handle initialization.
 # Currently: generate corners, fill up to initsamp
 function surfit_scalar(ssq, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=50)
@@ -56,20 +95,9 @@ function surfit_scalar(ssq, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=50)
 
     reg = 1e-15 # regularization term for the radial basis function
 
-    sampler = SobolSample() # sampler for initial points # I just checked and: it returns always the same thing!
-
     print("Initializing")
-    # Generate all corners of the hypercube defined by lb and ub
-    corners = vec(collect(Iterators.product(zip(lb, ub)...)))
-    sample_points = [tuple(scale(collect(corner))...) for corner in corners] # TODO: convert to vector of tuples
-    # Fill the remaining sample points using sample(...)
-    if length(sample_points) < initsamp
-        # Generate Sobol sample points in the scaled space
-        remaining_sample = sample(initsamp - length(sample_points), scale(lb), scale(ub), sampler)
-        for s in remaining_sample
-            push!(sample_points, s)
-        end
-    end
+    sample_points = init_sample(lb, ub, initsamp)
+    sample_points = map(Tuple ∘ scale, sample_points)
 
     push!(sample_points, tuple(scale(guess)...))
     print(" $(length(sample_points)) points")
@@ -183,21 +211,10 @@ function surfit(model, x, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=
     traj_scale_step = 0.5
 
     reg = 1e-15 # regularization term for the radial basis function
-    sampler = SobolSample() # sampler for initial points # I just checked and: it returns always the same thing!
 
-    
     print("Initializing")
-    # Generate all corners of the hypercube defined by lb and ub
-    corners = vec(collect(Iterators.product(zip(lb, ub)...)))
-    sample_points = [tuple(scale(collect(corner))...) for corner in corners] # TODO: convert to vector of tuples
-    # Fill the remaining sample points using sample(...)
-    if length(sample_points) < initsamp
-        # Generate Sobol sample points in the scaled space
-        remaining_sample = sample(initsamp - length(sample_points), scale(lb), scale(ub), sampler)
-        for s in remaining_sample
-            push!(sample_points, s)
-        end
-    end
+    sample_points = init_sample(lb, ub, initsamp)
+    sample_points = map(Tuple ∘ scale, sample_points)
 
     push!(sample_points, tuple(scale(guess)...))
     print(" $(length(sample_points)) points")
