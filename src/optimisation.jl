@@ -180,9 +180,20 @@ function surfit_scalar(ssq, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=50)
     return unscale(collect(current_min)), current_val, unscale.(sample_points), samp_val
 end
 
+mutable struct surtrace
+    status
+    nsamp::Integer
+    new_value::Real
+    current_value::Real
+    current_p
+end
+    
+
 ## TODO: tidy up and remove duplication between surfit and surfit_scalar
 
-function surfit(model, x, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=25)
+function surfit(model, x, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=25, cb=identity)
+    trace = surtrace("Initializing", 0, Inf, Inf, guess)
+    cb(trace)
     # setup scaled coordinates
     @assert all(lb .< guess .< ub) # check that guess is within bounds
     @assert all(lb .< ub) # check that bounds are valid
@@ -212,12 +223,12 @@ function surfit(model, x, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=
 
     reg = 1e-15 # regularization term for the radial basis function
 
-    print("Initializing")
+    #print("Initializing")
     sample_points = init_sample(lb, ub, initsamp)
     sample_points = map(Tuple ∘ scale, sample_points)
 
     push!(sample_points, tuple(scale(guess)...))
-    print(" $(length(sample_points)) points")
+    #print(" $(length(sample_points)) points")
     # compute initial values.
     samp_y = map(p -> model(x, unscale(p)...), sample_points)
     samp_ssq = map(y -> ssq_arr(y_exp, y), samp_y)
@@ -227,7 +238,8 @@ function surfit(model, x, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=
     current_min = scale(guess) # current minimum location
     min_index = length(sample_points) # current indexs
     current_ssq = true_ssq(current_min)
-
+    trace = surtrace("Ready", length(sample_points), current_ssq, current_ssq, guess)
+    cb(trace)
     while length(sample_points) < f_calls
         # Multi-output surrogate maps p -> y_guess
         surrogate = RadialBasis(sample_points, samp_y, scale(lb), scale(ub), rad=cubicRadial(); regularization=reg)
@@ -257,8 +269,9 @@ function surfit(model, x, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=
         push!(samp_y, y_true)
         push!(samp_ssq, new_ssq)
         # output logging. Dirty.
-        print("\rIt: $(length(sample_points)) surrogate fcalls $(Optim.f_calls(res)) $(round(new_ssq;digits=6)) $(round(current_ssq;digits=6)) at $(min_index)    ")
-        
+        #print("\rIt: $(length(sample_points)) surrogate fcalls $(Optim.f_calls(res)) $(round(new_ssq;digits=6)) $(round(current_ssq;digits=6)) at $(min_index)    ")
+        trace = surtrace("Fitting", length(sample_points), new_ssq, current_ssq, guess)
+        cb(trace)
         # are we done?
         if (norm(unscale(new_min) .- unscale(current_min)) < x_tol) && (abs(new_ssq - current_ssq) < f_tol) # TODO: change to `isapprox`
             break
@@ -289,10 +302,12 @@ function surfit(model, x, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=
         current_ssq = samp_ssq[min_index]
         
     end # while
-    print("  Done\n")
-
+    #print("  Done\n")
+    
     min_index = argmin(samp_ssq)
     current_min = collect(sample_points[min_index])
     current_ssq = samp_ssq[min_index]
+    trace = surtrace("Done", length(sample_points), current_ssq, current_ssq, guess)
+    cb(trace)
     return unscale(collect(current_min)), current_ssq, unscale.(sample_points), samp_y
 end 
