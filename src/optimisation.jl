@@ -95,12 +95,12 @@ function surfit_scalar(ssq, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=50)
 
     reg = 1e-15 # regularization term for the radial basis function
 
-    print("Initializing")
+    print("Initializing") # TODO: change print to logging
     sample_points = init_sample(lb, ub, initsamp)
     sample_points = map(Tuple ∘ scale, sample_points)
 
     push!(sample_points, tuple(scale(guess)...))
-    print(" $(length(sample_points)) points")
+    print(" $(length(sample_points)) points") # TODO: change print to logging
     # compute initial values and build surrogate
     samp_val = min_target.(sample_points) 
     current_min = scale(guess)
@@ -114,7 +114,7 @@ function surfit_scalar(ssq, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=50)
             sample_points, samp_val, scale(lb), scale(ub), rad=cubicRadial();
             regularization=reg # Add small regularization term
         )
-        bounded_surrogate = pi -> surrogate(from_internal(pi))
+        bounded_surrogate = pi -> surrogate(from_internal(pi)) # TODO: change variable name to p_internal
         res = optimize(
             bounded_surrogate, to_internal(current_min),
             NelderMead(),
@@ -130,7 +130,7 @@ function surfit_scalar(ssq, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=50)
         push!(sample_points, tuple(new_min...))
         push!(samp_val, true_val)
         # TODO: check if we can reuse the last simplex as an input to our new one.
-        # output logging. Dirty.
+        # output logging. Dirty. # TODO: change for logging.
         print("\rIt: $(length(sample_points)) surrogate fcalls $(Optim.f_calls(res)) $(round(true_val;digits=6)) $(round(current_val;digits=6)) at $(min_index)    ")
         
         # If we got out of bounds, add samples
@@ -245,7 +245,7 @@ function surfit(model, x, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=
         surrogate = RadialBasis(sample_points, samp_y, scale(lb), scale(ub), rad=cubicRadial(); regularization=reg)
         #@assert surrogate(scale(guess)) ≈ model(x, guess...)
     
-        bounded_surrogate = pi -> surrogate(from_internal(pi))
+        bounded_surrogate = pi -> surrogate(from_internal(pi)) # TODO: change varialbe name to p_internal.
         # residuals of y_guess
         resid(p) = y_exp .- bounded_surrogate(p)
         # SSQ of y_exp and y_guess
@@ -274,6 +274,7 @@ function surfit(model, x, y_exp, guess, lb, ub, x_tol, f_tol, f_calls, initsamp=
         cb(trace)
         # are we done?
         if (norm(unscale(new_min) .- unscale(current_min)) < x_tol) && (abs(new_ssq - current_ssq) < f_tol) # TODO: change to `isapprox`
+            # TODO add trace call.
             break
         # If step is small, add a simplex to the sample.
         # "small" is defined here as less than 1% of the distance between the bounds.

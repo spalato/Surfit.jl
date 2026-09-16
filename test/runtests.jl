@@ -2,8 +2,7 @@ using Test
 using TestItems
 using Surrogates
 using LinearAlgebra
-#include("../src/optimisation.jl")
-using Surfit: surfit_scalar, residual_vs
+using Surfit: surfit_scalar, resid_vs
 
 @testitem "surfit_scalar basic tests" begin
     model(t, a, b) = a * exp.(-b * t) # Example model
