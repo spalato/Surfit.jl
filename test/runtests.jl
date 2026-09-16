@@ -32,6 +32,10 @@ end
     include("./test_optimisation.jl")
 end
 
+@testitem "Benchmark core" begin
+    include("./test_benchmark.jl")
+end
+
 @testitem "Datastore tests" begin
     include("./tests_datastore.jl")
 end
