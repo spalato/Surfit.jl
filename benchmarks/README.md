@@ -46,3 +46,8 @@ numerical finite-difference Jacobian path (`autodiff=:finiteforward` by
 default), so `solver_f_calls` counts residual callback invocations and
 `solver_g_calls` is left empty because LsqFit does not expose its internal
 finite-difference column evaluations separately.
+
+All algorithms use the same hardcoded `x_tol=1e-8` and `f_tol=1e-10` policy.
+For LsqFit, `x_tol` maps to its parameter tolerance and `f_tol` maps to its
+gradient stopping tolerance because LsqFit does not expose a function-value
+tolerance keyword.

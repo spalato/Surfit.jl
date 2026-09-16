@@ -1,8 +1,11 @@
 # Surfit: fitting simple data to complicated models
 
-Surfit provides bounded surrogate-accelerated optimization for Julia, with
-helpers for least-squares objectives and persistent HDF5-backed function 
-evaluation caches.
+Surfit provides bounded surrogate-accelerated least-squares fitting to efficiently fit costly non-differentiable models to experimental data, with helpers for least-squares objectives and persistent HDF5-backed function evaluation caches. All arguments and optimizer parameters are on data scales.
+
+Compared to Levenberg-Marquart, surfit finds equivalent
+results, and tends to require less evaluations (about ~25% less) for single evaluations. Compared to Nedler-Mead simplex, `surfit` finds better results (lower minima, closer to LM),
+with 1/2 to 1/4 of the function evaluations. Benchmarking battery requires expansion. `surfit` can reuse previous results, greatly accelerating multiple
+fits to the same model, which none of these existing algorithms can do.
 
 The logic is to use an approximation of the function to accelerate convergence
 for very costly functions of a few parameters.
@@ -13,11 +16,11 @@ A deterministic algorithm, currently NM simplex, then minimizes the residuals
 for the surrogate function vs the target data. This provides a new candidate,
 which is then evaluated using the true function. The true result is used to
 refine the surrogate for the next minimization step. This process is repeated
-until convergence.
+until convergence, and convergence is only evaluated using true results.
 
 The results of the (costly) evaluations are stored in a data cache, which can
-be reused between runs. Therefore, multiple fits using the same model is 
-greatly accelerated.
+be reused between runs. Therefore, multiple fits using the same model are
+greatly accelerated (needs quantification).
 
 
 
@@ -62,9 +65,9 @@ popt, value, samples, sample_values = surfit(
     guess,
     lower,
     upper,
-    1e-8,
-    1e-10,
-    100,
+    1e-8, # x_tol
+    1e-10, # f_tol
+    100, # max f_calls
 )
 ```
 

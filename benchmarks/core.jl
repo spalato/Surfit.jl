@@ -3,8 +3,8 @@ using LsqFit
 using Optim
 using Surfit: surfit
 
-const SURFIT_X_TOL = 1e-8
-const SURFIT_F_TOL = 1e-10
+const X_TOL = 1e-8
+const F_TOL = 1e-10
 const SURFIT_F_CALLS = 100
 const SURFIT_INITIAL_SAMPLES = 25
 const VALUE_ATOL = 1e-8
@@ -137,8 +137,12 @@ function _run(optimizer, algorithm, case, scenario)
     end
 end
 
-function run_nelder_mead(case, scenario; options=Optim.Options())
+function run_nelder_mead(case, scenario)
     _run("Nelder-Mead", case, scenario) do objective, _, scenario
+        options = Optim.Options(
+            x_abstol=X_TOL,
+            f_abstol=F_TOL,
+        )
         result = optimize(objective, scenario.guess, NelderMead(), options)
         (
             parameters=Optim.minimizer(result),
@@ -149,8 +153,14 @@ function run_nelder_mead(case, scenario; options=Optim.Options())
     end
 end
 
-function run_lbfgs(case, scenario; options=Optim.Options())
+function run_lbfgs(case, scenario)
     _run("L-BFGS", case, scenario) do objective, _, scenario
+        options = Optim.Options(
+            x_abstol=X_TOL,
+            f_abstol=F_TOL,
+            outer_x_abstol=X_TOL,
+            outer_f_abstol=F_TOL,
+        )
         result = optimize(
             objective,
             scenario.lower,
@@ -183,6 +193,8 @@ function run_levenberg_marquardt(case, scenario; autodiff=:finiteforward)
             lower=scenario.lower,
             upper=scenario.upper,
             autodiff=autodiff,
+            x_tol=X_TOL,
+            g_tol=F_TOL,
         )
         (
             parameters=coef(fit),
@@ -203,8 +215,8 @@ function run_surfit(case, scenario)
             scenario.guess,
             scenario.lower,
             scenario.upper,
-            SURFIT_X_TOL,
-            SURFIT_F_TOL,
+            X_TOL,
+            F_TOL,
             SURFIT_F_CALLS,
             SURFIT_INITIAL_SAMPLES,
         )

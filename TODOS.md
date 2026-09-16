@@ -9,6 +9,7 @@ Functionnality
 - [ ] Tune algorithm, if possible.
 
 Improvements
+- [ ] Add defaults for x_tol, f_tol, f_calls.
 - [ ] Compare gaussian approximation of the confidence interval obtained from the surrogate to those of LM (curvature around the minimum)
 - [ ] Add in F-test confidence interval? Compare results of surrogate to LM estimation.
 
